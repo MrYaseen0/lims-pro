@@ -573,7 +573,7 @@ async def update_sample_status(sample_id: str, status: SampleStatus, current_use
 # ==================== RESULT ROUTES ====================
 @api_router.post("/results", response_model=dict)
 async def enter_result(result: ResultEntry, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.TECHNICIAN, UserRole.LAB_MANAGER, UserRole.ADMIN]:
+    if current_user["role"] not in ["technician", "lab_manager", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     order = await db.orders.find_one({"id": result.order_id})
