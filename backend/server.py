@@ -299,14 +299,14 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # ==================== USER ROUTES ====================
 @api_router.get("/users", response_model=List[dict])
 async def get_users(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.LAB_MANAGER]:
+    if current_user["role"] not in ["admin", "lab_manager"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(1000)
     return users
 
 @api_router.put("/users/{user_id}", response_model=dict)
 async def update_user(user_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != UserRole.ADMIN and current_user["id"] != user_id:
+    if current_user["role"] != "admin" and current_user["id"] != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     if "password" in updates:
