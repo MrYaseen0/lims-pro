@@ -448,7 +448,7 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
     invoice_doc["created_at"] = invoice_doc["created_at"].isoformat()
     await db.invoices.insert_one(invoice_doc)
     
-    del doc["_id"] if "_id" in doc else None
+    doc.pop("_id", None)
     return doc
 
 @api_router.get("/orders", response_model=List[dict])
