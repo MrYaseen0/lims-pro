@@ -327,7 +327,7 @@ async def create_patient(patient: PatientCreate, current_user: dict = Depends(ge
     doc = patient_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.patients.insert_one(doc)
-    del doc["_id"] if "_id" in doc else None
+    doc.pop("_id", None)
     return doc
 
 @api_router.get("/patients", response_model=List[dict])
