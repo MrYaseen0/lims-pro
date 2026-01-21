@@ -23,7 +23,7 @@ import {
 import { toast } from 'sonner';
 
 const SAMPLE_STATUSES = [
-  { value: '', label: 'All Statuses' },
+  { value: 'all', label: 'All Statuses' },
   { value: 'pending', label: 'Pending' },
   { value: 'collected', label: 'Collected' },
   { value: 'received', label: 'Received' },
@@ -35,7 +35,7 @@ const SAMPLE_STATUSES = [
 export default function Samples() {
   const [samples, setSamples] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function Samples() {
     setLoading(true);
     try {
       const params = {};
-      if (statusFilter) params.status = statusFilter;
+      if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
       const response = await sampleAPI.getAll(params);
       setSamples(response.data);
     } catch (error) {
