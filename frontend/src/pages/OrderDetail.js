@@ -92,6 +92,87 @@ export default function OrderDetail() {
     }
   };
 
+  const handleGeneratePdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      const response = await reportAPI.generatePdf(order.id);
+      toast.success('PDF report generated successfully');
+      
+      // Open PDF in new tab
+      const token = localStorage.getItem('token');
+      const pdfUrl = `${response.data.download_url}`;
+      
+      // Fetch with auth and open
+      const pdfResponse = await fetch(`${process.env.REACT_APP_BACKEND_URL}${pdfUrl}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (pdfResponse.ok) {
+        const blob = await pdfResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      }
+      
+      fetchOrder();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to generate PDF');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!order.pdf_filename) {
+      toast.error('No PDF available. Generate one first.');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/api/reports/${order.id}/download/${order.pdf_filename}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `LabReport_${order.order_id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } else {
+        toast.error('Failed to download PDF');
+      }
+    } catch (error) {
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/api/reports/${order.id}/pdf-stream`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } else {
+        const error = await response.json();
+        toast.error(error.detail || 'Failed to preview PDF');
+      }
+    } catch (error) {
+      toast.error('Failed to preview PDF');
+    }
+  };
+
   const getCurrentStepIndex = () => {
     return STATUS_STEPS.findIndex(step => step.key === order?.status);
   };
