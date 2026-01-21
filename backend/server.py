@@ -363,7 +363,7 @@ async def update_patient(patient_id: str, updates: dict, current_user: dict = De
 # ==================== TEST CATALOG ROUTES ====================
 @api_router.post("/tests", response_model=dict)
 async def create_test(test: TestCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.LAB_MANAGER]:
+    if current_user["role"] not in ["admin", "lab_manager"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     existing = await db.tests.find_one({"code": test.code})
@@ -396,7 +396,7 @@ async def get_test(test_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.put("/tests/{test_id}", response_model=dict)
 async def update_test(test_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.LAB_MANAGER]:
+    if current_user["role"] not in ["admin", "lab_manager"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.tests.update_one({"id": test_id}, {"$set": updates})
     if result.modified_count == 0:
