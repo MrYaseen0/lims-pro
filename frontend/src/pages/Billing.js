@@ -24,7 +24,7 @@ import {
 import { toast } from 'sonner';
 
 const PAYMENT_STATUSES = [
-  { value: '', label: 'All Statuses' },
+  { value: 'all', label: 'All Statuses' },
   { value: 'pending', label: 'Pending' },
   { value: 'partial', label: 'Partial' },
   { value: 'paid', label: 'Paid' },
@@ -34,7 +34,7 @@ const PAYMENT_STATUSES = [
 export default function Billing() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function Billing() {
     setLoading(true);
     try {
       const params = {};
-      if (statusFilter) params.status = statusFilter;
+      if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
       const response = await invoiceAPI.getAll(params);
       setInvoices(response.data);
     } catch (error) {
