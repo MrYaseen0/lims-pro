@@ -82,7 +82,7 @@ def get_styles():
     ))
     
     styles.add(ParagraphStyle(
-        name='Normal',
+        name='NormalText',
         fontSize=10,
         textColor=colors.black
     ))
