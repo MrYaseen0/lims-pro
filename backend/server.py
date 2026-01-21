@@ -370,6 +370,18 @@ async def update_user(user_id: str, updates: dict, current_user: dict = Depends(
         raise HTTPException(status_code=404, detail="User not found")
     
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    
+    # Audit log: User updated
+    await audit_logger.log(
+        action=AuditAction.USER_UPDATED,
+        user_id=current_user["id"],
+        user_email=current_user["email"],
+        user_role=current_user["role"],
+        entity_type="user",
+        entity_id=user_id,
+        details={"fields_updated": list(updates.keys())}
+    )
+    
     return updated
 
 # ==================== PATIENT ROUTES ====================
@@ -381,6 +393,19 @@ async def create_patient(patient: PatientCreate, current_user: dict = Depends(ge
     doc["created_at"] = doc["created_at"].isoformat()
     await db.patients.insert_one(doc)
     doc.pop("_id", None)
+    
+    # Audit log: Patient created
+    await audit_logger.log(
+        action=AuditAction.PATIENT_CREATED,
+        user_id=current_user["id"],
+        user_email=current_user["email"],
+        user_role=current_user["role"],
+        entity_type="patient",
+        entity_id=doc["id"],
+        entity_name=doc["name"],
+        details={"patient_id": doc["patient_id"]}
+    )
+    
     return doc
 
 @api_router.get("/patients", response_model=List[dict])
