@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +33,10 @@ JWT_EXPIRATION_HOURS = 24
 # Reports directory
 REPORTS_DIR = ROOT_DIR / 'reports'
 REPORTS_DIR.mkdir(exist_ok=True)
+
+# Import audit logger
+from audit_logger import AuditLogger, AuditAction, create_audit_logger
+audit_logger = create_audit_logger(db)
 
 # Create the main app
 app = FastAPI(title="Laboratory Information System API")
