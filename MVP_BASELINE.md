@@ -63,6 +63,9 @@
 ### Reports
 - GET /api/reports/{order_id}
 - POST /api/reports/{order_id}/release
+- POST /api/reports/{order_id}/generate-pdf *(NEW - Phase 2)*
+- GET /api/reports/{order_id}/download/{filename} *(NEW - Phase 2)*
+- GET /api/reports/{order_id}/pdf-stream *(NEW - Phase 2)*
 
 ### Billing
 - GET /api/invoices
