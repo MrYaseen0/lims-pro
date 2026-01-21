@@ -288,19 +288,61 @@ async def register(user: UserCreate):
     del user_dict["password"]
     if "_id" in user_dict:
         del user_dict["_id"]
+    
+    # Audit log: User created
+    await audit_logger.log(
+        action=AuditAction.USER_CREATED,
+        user_id=user_dict["id"],
+        user_email=user_dict["email"],
+        user_role=user_dict["role"],
+        entity_type="user",
+        entity_id=user_dict["id"],
+        entity_name=user_dict["name"],
+        details={"registered_role": user_dict["role"]}
+    )
+    
     return {"message": "User registered successfully", "user": user_dict}
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
     user = await db.users.find_one({"email": credentials.email})
     if not user or not verify_password(credentials.password, user["password"]):
+        # Audit log: Failed login attempt
+        await audit_logger.log(
+            action=AuditAction.LOGIN_FAILED,
+            user_id=None,
+            user_email=credentials.email,
+            entity_type="auth",
+            success=False,
+            error_message="Invalid credentials"
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     if not user.get("is_active", True):
+        await audit_logger.log(
+            action=AuditAction.LOGIN_FAILED,
+            user_id=user["id"],
+            user_email=credentials.email,
+            entity_type="auth",
+            success=False,
+            error_message="Account deactivated"
+        )
         raise HTTPException(status_code=401, detail="Account is deactivated")
     
     token = create_token({"id": user["id"], "email": user["email"], "role": user["role"]})
     user_response = {k: v for k, v in user.items() if k not in ["_id", "password"]}
+    
+    # Audit log: Successful login
+    await audit_logger.log(
+        action=AuditAction.LOGIN,
+        user_id=user["id"],
+        user_email=user["email"],
+        user_role=user["role"],
+        entity_type="auth",
+        entity_id=user["id"],
+        entity_name=user["name"]
+    )
+    
     return TokenResponse(access_token=token, user=user_response)
 
 @api_router.get("/auth/me", response_model=dict)
