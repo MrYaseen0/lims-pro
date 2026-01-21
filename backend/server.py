@@ -635,7 +635,7 @@ async def get_technician_queue(current_user: dict = Depends(get_current_user)):
 # ==================== PATHOLOGIST ROUTES ====================
 @api_router.post("/approve", response_model=dict)
 async def approve_result(approval: ResultApproval, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.PATHOLOGIST, UserRole.LAB_MANAGER, UserRole.ADMIN]:
+    if current_user["role"] not in ["pathologist", "lab_manager", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     order = await db.orders.find_one({"id": approval.order_id})
@@ -692,7 +692,7 @@ async def get_pathologist_queue(current_user: dict = Depends(get_current_user)):
 # ==================== REPORT ROUTES ====================
 @api_router.post("/reports/{order_id}/release", response_model=dict)
 async def release_report(order_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.PATHOLOGIST, UserRole.LAB_MANAGER, UserRole.ADMIN]:
+    if current_user["role"] not in ["pathologist", "lab_manager", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     order = await db.orders.find_one({"id": order_id})
