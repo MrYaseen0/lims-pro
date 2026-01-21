@@ -14,6 +14,8 @@ import {
   AlertCircle,
   Download,
   Send,
+  FileDown,
+  Eye,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -37,6 +39,7 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true);
   const [collectingSample, setCollectingSample] = useState(false);
   const [releasingReport, setReleasingReport] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     fetchOrder();
