@@ -91,6 +91,9 @@ export const pathologistAPI = {
 export const reportAPI = {
   get: (orderId) => api.get(`/reports/${orderId}`),
   release: (orderId) => api.post(`/reports/${orderId}/release`),
+  generatePdf: (orderId) => api.post(`/reports/${orderId}/generate-pdf`),
+  getPdfUrl: (orderId, filename) => `${BACKEND_URL}/api/reports/${orderId}/download/${filename}`,
+  streamPdf: (orderId) => `${BACKEND_URL}/api/reports/${orderId}/pdf-stream`,
 };
 
 // Invoice APIs
