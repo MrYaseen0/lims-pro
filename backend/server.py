@@ -539,7 +539,7 @@ async def create_sample(sample: SampleCreate, current_user: dict = Depends(get_c
         }
     )
     
-    del doc["_id"] if "_id" in doc else None
+    doc.pop("_id", None)
     return doc
 
 @api_router.get("/samples", response_model=List[dict])
