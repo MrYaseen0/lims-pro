@@ -283,7 +283,7 @@ class LISAPITester:
         
         # Switch to technician token
         if self.test_data['users'].get('technician'):
-            self.token = self.test_data['users']['technician']['access_token']
+            self.token = self.test_data['users']['technician'].get('access_token')
 
         # Get technician queue
         success, data, status = self.make_request('GET', 'technician/queue')
