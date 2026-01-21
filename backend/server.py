@@ -275,7 +275,8 @@ async def register(user: UserCreate):
     
     await db.users.insert_one(user_dict)
     del user_dict["password"]
-    del user_dict["_id"] if "_id" in user_dict else None
+    if "_id" in user_dict:
+        del user_dict["_id"]
     return {"message": "User registered successfully", "user": user_dict}
 
 @api_router.post("/auth/login", response_model=TokenResponse)
