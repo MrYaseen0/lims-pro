@@ -212,7 +212,7 @@ export default function OrderDetail() {
             <p className="text-slate-500">Created {formatDateTime(order.created_at)}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {order.status === 'registered' && (
             <Button 
               onClick={handleCollectSample}
@@ -225,21 +225,56 @@ export default function OrderDetail() {
             </Button>
           )}
           {order.status === 'approved' && (
-            <Button 
-              onClick={handleReleaseReport}
-              disabled={releasingReport}
-              className="bg-emerald-600 hover:bg-emerald-700"
-              data-testid="release-report-btn"
-            >
-              {releasingReport ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-              Release Report
-            </Button>
+            <>
+              <Button 
+                onClick={handleReleaseReport}
+                disabled={releasingReport}
+                className="bg-emerald-600 hover:bg-emerald-700"
+                data-testid="release-report-btn"
+              >
+                {releasingReport ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Release Report
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={handlePreviewPdf}
+                data-testid="preview-pdf-btn"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Preview PDF
+              </Button>
+            </>
           )}
           {order.status === 'report_released' && (
-            <Button variant="outline" data-testid="download-report-btn">
-              <Download className="w-4 h-4 mr-2" />
-              Download Report
-            </Button>
+            <>
+              <Button 
+                onClick={handleGeneratePdf}
+                disabled={generatingPdf}
+                className="bg-indigo-600 hover:bg-indigo-700"
+                data-testid="generate-pdf-btn"
+              >
+                {generatingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                {order.pdf_filename ? 'Regenerate PDF' : 'Generate PDF'}
+              </Button>
+              {order.pdf_filename && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleDownloadPdf}
+                  data-testid="download-report-btn"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </Button>
+              )}
+              <Button 
+                variant="outline"
+                onClick={handlePreviewPdf}
+                data-testid="preview-pdf-btn"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Preview
+              </Button>
+            </>
           )}
         </div>
       </div>
