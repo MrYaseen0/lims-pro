@@ -100,6 +100,15 @@ registered → sample_collected → in_lab → under_review → approved → rep
 - pathologist: Review, approve
 - receptionist: Patients, orders, billing
 
+## Phase-2 Features Added
+### PDF Report Generation (January 21, 2026)
+- POST /api/reports/{order_id}/generate-pdf - Generate PDF report
+- GET /api/reports/{order_id}/download/{filename} - Download generated PDF
+- GET /api/reports/{order_id}/pdf-stream - Stream PDF for preview
+- Files: /app/backend/pdf_generator.py (new), /app/backend/reports/ (storage)
+- UI: Regenerate PDF, Download PDF, Preview buttons on Order Detail page
+- Constraints: Only available for approved or released orders
+
 ## Phase-2 Rules
 1. All new endpoints must be ADDITIVE (new routes only)
 2. Existing endpoint signatures MUST NOT change
