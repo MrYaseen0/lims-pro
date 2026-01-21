@@ -25,7 +25,7 @@ import {
 import { toast } from 'sonner';
 
 const ORDER_STATUSES = [
-  { value: '', label: 'All Statuses' },
+  { value: 'all', label: 'All Statuses' },
   { value: 'registered', label: 'Registered' },
   { value: 'sample_collected', label: 'Sample Collected' },
   { value: 'in_lab', label: 'In Lab' },
@@ -37,8 +37,8 @@ const ORDER_STATUSES = [
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,8 +49,8 @@ export default function Orders() {
     setLoading(true);
     try {
       const params = {};
-      if (statusFilter) params.status = statusFilter;
-      if (priorityFilter) params.priority = priorityFilter;
+      if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
+      if (priorityFilter && priorityFilter !== 'all') params.priority = priorityFilter;
       const response = await orderAPI.getAll(params);
       setOrders(response.data);
     } catch (error) {
@@ -97,7 +97,7 @@ export default function Orders() {
             <SelectValue placeholder="Priority" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Priorities</SelectItem>
+            <SelectItem value="all">All Priorities</SelectItem>
             <SelectItem value="normal">Normal</SelectItem>
             <SelectItem value="urgent">Urgent</SelectItem>
             <SelectItem value="stat">STAT</SelectItem>
