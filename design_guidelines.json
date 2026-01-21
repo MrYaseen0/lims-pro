@@ -1,0 +1,176 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Anti-AI Designer",
+    "principles": [
+      "Fusion over Imitation",
+      "Emotion First",
+      "Content is King",
+      "Zoom In",
+      "Negative Space",
+      "Contrast"
+    ]
+  },
+  "project": {
+    "name": "Crelio Health Clone (LIS)",
+    "type": "SaaS Dashboard",
+    "theme": "Clinical Precision (Light Mode Focus)",
+    "emotional_tone": "Trustworthy, Efficient, Sterile, Professional"
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Manrope, sans-serif",
+      "weights": ["600", "700", "800"],
+      "usage": "All page titles, section headers, and modal titles. Use tight tracking (-0.02em)."
+    },
+    "body": {
+      "font_family": "Inter, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "General text, data tables, form inputs. Use normal tracking."
+    },
+    "mono": {
+      "font_family": "JetBrains Mono, monospace",
+      "usage": "Sample IDs, Accession Numbers, Code snippets."
+    },
+    "installation": "Import via Google Fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap');"
+  },
+  "colors": {
+    "palette_name": "Swiss Clinical",
+    "primary": {
+      "name": "Indigo Precision",
+      "hex": "#4F46E5",
+      "tailwind": "indigo-600",
+      "usage": "Primary buttons, active states, key links."
+    },
+    "secondary": {
+      "name": "Slate Neutral",
+      "hex": "#64748B",
+      "tailwind": "slate-500",
+      "usage": "Secondary text, icons, borders."
+    },
+    "accent": {
+      "name": "Violet Insight",
+      "hex": "#7C3AED",
+      "tailwind": "violet-600",
+      "usage": "AI features, smart suggestions, premium actions."
+    },
+    "success": {
+      "name": "Emerald Safe",
+      "hex": "#059669",
+      "tailwind": "emerald-600",
+      "usage": "Completed status, negative test results (safe)."
+    },
+    "warning": {
+      "name": "Amber Caution",
+      "hex": "#D97706",
+      "tailwind": "amber-600",
+      "usage": "Pending status, abnormal values (low risk)."
+    },
+    "danger": {
+      "name": "Rose Critical",
+      "hex": "#E11D48",
+      "tailwind": "rose-600",
+      "usage": "Critical values, delete actions, errors."
+    },
+    "backgrounds": {
+      "page": "bg-slate-50",
+      "card": "bg-white",
+      "sidebar": "bg-slate-900"
+    },
+    "forbidden": ["#1B93A4", "#000000", "#808080"]
+  },
+  "layout_strategy": {
+    "dashboard_grid": {
+      "type": "Bento Grid Mode B (High Density)",
+      "columns": "grid-cols-1 md:grid-cols-4",
+      "gap": "gap-4",
+      "rules": [
+        "Summary cards: col-span-1",
+        "Main charts: col-span-2 or col-span-3",
+        "Lists/Feeds: col-span-1 row-span-2",
+        "Use h-full on all children to ensure alignment."
+      ]
+    },
+    "spacing": {
+      "container_padding": "p-6 or p-8",
+      "section_gap": "gap-8",
+      "internal_card_padding": "p-5"
+    }
+  },
+  "components": {
+    "cards": {
+      "style": "Flat, 1px border, no shadow by default.",
+      "classes": "bg-white border border-slate-200 rounded-lg hover:border-indigo-200 transition-colors"
+    },
+    "buttons": {
+      "primary": "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm rounded-md px-4 py-2 font-medium transition-all active:scale-95",
+      "secondary": "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-md px-4 py-2 font-medium",
+      "ghost": "hover:bg-slate-100 text-slate-600 hover:text-slate-900"
+    },
+    "inputs": {
+      "style": "bg-slate-50 border-slate-200 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all rounded-md"
+    },
+    "tables": {
+      "style": "Cardless, clean rows.",
+      "header": "bg-slate-50 text-slate-500 uppercase text-xs font-semibold tracking-wider",
+      "row": "border-b border-slate-100 hover:bg-slate-50/50 transition-colors"
+    },
+    "status_badges": {
+      "style": "Pill-shaped, subtle background, strong text.",
+      "classes": "rounded-full px-2.5 py-0.5 text-xs font-medium"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": {
+      "usage": "Sticky headers, modal overlays only.",
+      "classes": "bg-white/80 backdrop-blur-md border-b border-slate-200/50"
+    },
+    "micro_interactions": {
+      "hover": "All interactive elements must have a hover state (color shift or slight lift).",
+      "active": "Buttons must scale down slightly (active:scale-95) on click."
+    },
+    "shadows": {
+      "usage": "Minimal. Use shadows only for dropdowns, modals, and floating elements.",
+      "value": "shadow-lg shadow-slate-200/50"
+    }
+  },
+  "images": {
+    "login_hero": {
+      "url": "https://images.pexels.com/photos/4031415/pexels-photo-4031415.jpeg",
+      "alt": "Scientist looking through microscope",
+      "usage": "Login page split layout (Right side)"
+    },
+    "empty_state_samples": {
+      "url": "https://images.unsplash.com/photo-1601839215170-6ce5854968d6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwyfHxtZWRpY2FsJTIwdGVzdCUyMHR1YmVzJTIwYmxvb2QlMjBzYW1wbGVzJTIwcmFja3xlbnwwfHx8fDE3NjkwMjY2NDd8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Medical test tubes in rack",
+      "usage": "Empty state for Sample Collection queue"
+    },
+    "technician_work": {
+      "url": "https://images.pexels.com/photos/3908182/pexels-photo-3908182.jpeg",
+      "alt": "Lab technician hands with samples",
+      "usage": "Dashboard widget background or promo area"
+    },
+    "logo_placeholder": {
+      "text": "LIMS.Pro",
+      "style": "font-manrope font-extrabold text-2xl tracking-tight text-indigo-600"
+    }
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "Stroke width 1.5px or 2px. Size 16px (sm) to 24px (lg)."
+  },
+  "accessibility": {
+    "contrast": "Ensure text is Slate-600 or darker on white backgrounds.",
+    "focus": "All inputs must have visible focus rings (indigo-100).",
+    "testing": "All interactive elements must have data-testid attributes."
+  },
+  "universal_guidelines": [
+    "Do not use generic centered layouts.",
+    "Do not use 'Inter' for headings.",
+    "Do not use gradients for backgrounds (use solid Slate-50 or White).",
+    "Use 'sonner' for toasts.",
+    "Use 'recharts' for analytics.",
+    "Always use 'Manrope' for headings to give character.",
+    "Maintain 'Clinical Precision' - align things perfectly, use borders to separate data."
+  ]
+}
