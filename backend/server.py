@@ -374,7 +374,7 @@ async def create_test(test: TestCreate, current_user: dict = Depends(get_current
     doc = test_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.tests.insert_one(doc)
-    del doc["_id"] if "_id" in doc else None
+    doc.pop("_id", None)
     return doc
 
 @api_router.get("/tests", response_model=List[dict])
