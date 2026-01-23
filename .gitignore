@@ -82,3 +82,9 @@ frontend/node_modules/.cache/default-development/3.pack
 frontend/node_modules/.cache/default-development/5.pack
 frontend/node_modules/.cache/default-development/6.pack
 frontend/node_modules/.cache/default-development/8.pack
+backend/reports/*.pdf
+backend/reports/
+__pycache__/
+.env
+.env.*
+node_modules/
