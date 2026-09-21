@@ -36,6 +36,19 @@ api.interceptors.response.use(
   }
 );
 
+// Extract a human-readable message from an API error.
+// FastAPI 422 responses carry `detail` as an ARRAY of objects — rendering it
+// directly crashes React, so always collapse it to a string.
+export const getErrorMessage = (error, fallback = 'Something went wrong') => {
+  const detail = error?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => d?.msg).filter(Boolean);
+    if (msgs.length) return msgs.join('; ');
+  }
+  if (typeof detail === 'string' && detail) return detail;
+  return error?.message || fallback;
+};
+
 // Auth APIs
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
