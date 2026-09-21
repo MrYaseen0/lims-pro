@@ -1253,8 +1253,11 @@ async def seed_data():
         }
         await db.users.insert_one(user_doc)
     
-    # Create sample tests (with reference ranges for CBC/RFT/LFT)
+    # Create sample tests (with reference ranges for CBC/RFT/LFT).
+    # Skip codes already inserted by ensure_test_reference_ranges() above.
     for t in SEED_TESTS:
+        if await db.tests.find_one({"code": t["code"]}):
+            continue
         test_doc = {
             "id": str(uuid.uuid4()),
             **t,
