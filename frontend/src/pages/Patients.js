@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { patientAPI, doctorAPI } from '../lib/api';
+import { patientAPI, doctorAPI, getErrorMessage } from '../lib/api';
 import { formatDate, formatDateTime, getStatusColor, formatStatus, debounce } from '../lib/utils';
 import {
   Search,
@@ -94,10 +94,14 @@ export default function Patients() {
     setCreating(true);
 
     try {
+      // Drop empty optional fields — backend validators (e.g. EmailStr) reject ""
       const payload = {
         ...formData,
         age: parseInt(formData.age),
       };
+      ['email', 'address', 'id_type', 'id_number', 'father_name'].forEach((k) => {
+        if (payload[k] === '') payload[k] = undefined;
+      });
       await patientAPI.create(payload);
       toast.success('Patient registered successfully');
       setDialogOpen(false);
@@ -115,7 +119,7 @@ export default function Patients() {
       });
       fetchPatients();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to register patient');
+      toast.error(getErrorMessage(error, 'Failed to register patient'));
     } finally {
       setCreating(false);
     }
