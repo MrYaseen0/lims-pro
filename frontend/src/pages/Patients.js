@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { patientAPI } from '../lib/api';
+import { patientAPI, doctorAPI } from '../lib/api';
 import { formatDate, formatDateTime, getStatusColor, formatStatus, debounce } from '../lib/utils';
 import {
   Search,
@@ -39,12 +39,15 @@ export default function Patients() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [doctors, setDoctors] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
+    father_name: '',
     age: '',
     gender: 'male',
     phone: '',
     email: '',
+    referred_by: 'Self',
     address: '',
     id_type: '',
     id_number: '',
@@ -53,7 +56,17 @@ export default function Patients() {
 
   useEffect(() => {
     fetchPatients();
+    fetchDoctors();
   }, []);
+
+  const fetchDoctors = async () => {
+    try {
+      const response = await doctorAPI.getAll();
+      setDoctors(response.data);
+    } catch (error) {
+      // Doctors list is optional; "Self" is always available
+    }
+  };
 
   const fetchPatients = async (searchTerm = '') => {
     setLoading(true);
@@ -90,10 +103,12 @@ export default function Patients() {
       setDialogOpen(false);
       setFormData({
         name: '',
+        father_name: '',
         age: '',
         gender: 'male',
         phone: '',
         email: '',
+        referred_by: 'Self',
         address: '',
         id_type: '',
         id_number: '',
@@ -136,6 +151,16 @@ export default function Patients() {
                     required
                     className="mt-1.5"
                     data-testid="patient-name-input"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label htmlFor="father_name">Father Name</Label>
+                  <Input
+                    id="father_name"
+                    value={formData.father_name}
+                    onChange={(e) => setFormData({ ...formData, father_name: e.target.value })}
+                    className="mt-1.5"
+                    data-testid="patient-father-name-input"
                   />
                 </div>
                 <div>
@@ -189,6 +214,23 @@ export default function Patients() {
                     className="mt-1.5"
                     data-testid="patient-email-input"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="referred_by">Referred By</Label>
+                  <Select
+                    value={formData.referred_by}
+                    onValueChange={(value) => setFormData({ ...formData, referred_by: value })}
+                  >
+                    <SelectTrigger className="mt-1.5" data-testid="patient-referred-by-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Self">Self</SelectItem>
+                      {doctors.map((d) => (
+                        <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="col-span-2">
                   <Label htmlFor="address">Address</Label>
@@ -286,7 +328,7 @@ export default function Patients() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Patient</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Patient ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Serial No</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Registered</th>
                   <th className="text-right px-4 py-3"></th>
