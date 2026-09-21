@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { orderAPI, patientAPI, testAPI, doctorAPI } from '../lib/api';
+import { orderAPI, patientAPI, testAPI, doctorAPI, getErrorMessage } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import {
   ArrowLeft,
@@ -138,7 +138,7 @@ export default function CreateOrder() {
       toast.success('Order created successfully');
       navigate(`/orders/${response.data.id}`);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create order');
+      toast.error(getErrorMessage(error, 'Failed to create order'));
     } finally {
       setCreating(false);
     }
