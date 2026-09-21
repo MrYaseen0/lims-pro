@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { testAPI } from '../lib/api';
+import { testAPI, getErrorMessage } from '../lib/api';
 import { formatCurrency, formatDate } from '../lib/utils';
 import {
   Search,
@@ -93,7 +93,7 @@ export default function Tests() {
       resetForm();
       fetchTests();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to save test');
+      toast.error(getErrorMessage(error, 'Failed to save test'));
     } finally {
       setSaving(false);
     }
