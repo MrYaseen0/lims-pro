@@ -348,6 +348,34 @@ export default function Tests() {
                   </div>
                 </div>
 
+                {test.reference_ranges && test.reference_ranges.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                      Reference Ranges
+                    </p>
+                    <div className="max-h-48 overflow-y-auto border border-slate-100 rounded">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-50">
+                          <tr className="text-left text-xs text-slate-400">
+                            <th className="py-1.5 px-2 font-medium">Parameter</th>
+                            <th className="py-1.5 px-2 font-medium">Unit</th>
+                            <th className="py-1.5 px-2 font-medium">Normal Range</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {test.reference_ranges.map((r, i) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="py-1.5 px-2 text-slate-700">{r.parameter}</td>
+                              <td className="py-1.5 px-2 text-slate-500">{r.unit}</td>
+                              <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{r.normal_range}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <Button 
                     variant="outline" 
