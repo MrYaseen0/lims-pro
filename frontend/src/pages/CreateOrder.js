@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { orderAPI, patientAPI, testAPI } from '../lib/api';
+import { orderAPI, patientAPI, testAPI, doctorAPI } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import {
   ArrowLeft,
@@ -34,6 +34,7 @@ export default function CreateOrder() {
 
   const [patients, setPatients] = useState([]);
   const [tests, setTests] = useState([]);
+  const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -61,12 +62,14 @@ export default function CreateOrder() {
 
   const fetchInitialData = async () => {
     try {
-      const [patientsRes, testsRes] = await Promise.all([
+      const [patientsRes, testsRes, doctorsRes] = await Promise.all([
         patientAPI.getAll(),
         testAPI.getAll({ active_only: true }),
+        doctorAPI.getAll().catch(() => ({ data: [] })),
       ]);
       setPatients(patientsRes.data);
       setTests(testsRes.data);
+      setDoctors(doctorsRes.data);
     } catch (error) {
       toast.error('Failed to load data');
     } finally {
@@ -335,12 +338,19 @@ export default function CreateOrder() {
                 </div>
                 <div>
                   <Label>Referring Doctor</Label>
-                  <Input
+                  <Select
                     value={formData.referring_doctor}
-                    onChange={(e) => setFormData(prev => ({ ...prev, referring_doctor: e.target.value }))}
-                    placeholder="Dr. Name"
-                    className="mt-1.5"
-                  />
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, referring_doctor: value }))}
+                  >
+                    <SelectTrigger className="mt-1.5" data-testid="referring-doctor-select">
+                      <SelectValue placeholder="Select doctor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {doctors.map((d) => (
+                        <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div>
