@@ -68,7 +68,14 @@ class AuditLogger:
     Centralized audit logging service
     """
     
-    def __init__(self, db):
+    def __init__(self, db=None):
+        # db may be None at import time; server.init_db() rebinds it once the
+        # Motor client is created inside the running event loop.
+        self.db = db
+        self.collection = db.audit_logs if db is not None else None
+
+    def bind(self, db):
+        """(Re)bind to a live database handle."""
         self.db = db
         self.collection = db.audit_logs
     

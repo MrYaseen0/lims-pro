@@ -63,7 +63,11 @@ export const authAPI = {
 
 // Patient APIs
 export const patientAPI = {
-  getAll: (search) => api.get('/patients', { params: { search } }),
+  getAll: (params) => {
+    // Back-compat: getAll("search text") still works
+    const q = typeof params === 'string' ? { search: params } : params || {};
+    return api.get('/patients', { params: q });
+  },
   getById: (id) => api.get(`/patients/${id}`),
   create: (data) => api.post('/patients', data),
   update: (id, data) => api.put(`/patients/${id}`, data),

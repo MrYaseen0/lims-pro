@@ -33,10 +33,15 @@ import {
 } from '../components/ui/select';
 import { toast } from 'sonner';
 
+import Pagination from '../components/Pagination';
+
 export default function Patients() {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [doctors, setDoctors] = useState([]);
@@ -57,7 +62,7 @@ export default function Patients() {
   useEffect(() => {
     fetchPatients();
     fetchDoctors();
-  }, []);
+  }, [page, pageSize]);
 
   const fetchDoctors = async () => {
     try {
@@ -68,11 +73,16 @@ export default function Patients() {
     }
   };
 
-  const fetchPatients = async (searchTerm = '') => {
+  const fetchPatients = async (searchTerm = search) => {
     setLoading(true);
     try {
-      const response = await patientAPI.getAll(searchTerm);
+      const response = await patientAPI.getAll({
+        search: searchTerm || undefined,
+        page,
+        page_size: pageSize,
+      });
       setPatients(response.data);
+      setTotal(parseInt(response.headers['x-total-count'] || '0', 10));
     } catch (error) {
       toast.error('Failed to fetch patients');
     } finally {
@@ -81,6 +91,7 @@ export default function Patients() {
   };
 
   const handleSearch = debounce((value) => {
+    setPage(1);
     fetchPatients(value);
   }, 300);
 
