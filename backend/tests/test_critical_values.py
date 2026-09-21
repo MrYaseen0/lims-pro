@@ -10,6 +10,7 @@ async def make_test_with_critical():
         "id": "test-critical-001",
         "code": "K",
         "name": "Potassium",
+        "price": 500.0,
         "reference_ranges": [
             {
                 "parameter": "Potassium",
@@ -22,6 +23,21 @@ async def make_test_with_critical():
     }
     await server.db.tests.insert_one(test_doc)
     return test_doc
+
+
+async def make_order_for_test(client, patient_id, test_doc):
+    """Create an order using the current API format (tests as OrderTestItem list)."""
+    r = await client.post("/api/orders", json={
+        "patient_id": patient_id,
+        "tests": [{
+            "test_id": test_doc["id"],
+            "test_name": test_doc["name"],
+            "test_code": test_doc["code"],
+            "price": test_doc["price"],
+        }],
+    })
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 @pytest.mark.asyncio
@@ -37,12 +53,7 @@ async def test_critical_value_creates_alert(client):
     test_doc = await make_test_with_critical()
     
     # Create order
-    r = await transport_client.post("/api/orders", json={
-        "patient_id": patient["id"],
-        "test_ids": [test_doc["id"]],
-    })
-    assert r.status_code == 200, r.text
-    order = r.json()
+    order = await make_order_for_test(transport_client, patient["id"], test_doc)
     
     # Enter a critical high result (K+ 6.5 > critical_high 6.0)
     r = await transport_client.post("/api/results", json={
@@ -73,12 +84,7 @@ async def test_non_critical_value_no_alert(client):
     patient = await make_patient_via_api(client, name="Normal Patient")
     test_doc = await make_test_with_critical()
     
-    r = await client.post("/api/orders", json={
-        "patient_id": patient["id"],
-        "test_ids": [test_doc["id"]],
-    })
-    assert r.status_code == 200
-    order = r.json()
+    order = await make_order_for_test(client, patient["id"], test_doc)
     
     # Enter normal result (K+ 4.0, within normal range)
     r = await client.post("/api/results", json={
@@ -105,11 +111,7 @@ async def test_acknowledge_critical_alert(client):
     patient = await make_patient_via_api(client, name="Ack Patient")
     test_doc = await make_test_with_critical()
     
-    r = await client.post("/api/orders", json={
-        "patient_id": patient["id"],
-        "test_ids": [test_doc["id"]],
-    })
-    order = r.json()
+    order = await make_order_for_test(client, patient["id"], test_doc)
     
     r = await client.post("/api/results", json={
         "order_id": order["id"],
