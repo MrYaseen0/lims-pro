@@ -119,4 +119,9 @@ export const seedAPI = {
   seed: () => api.post('/seed'),
 };
 
+// Doctor APIs (referring doctors list)
+export const doctorAPI = {
+  getAll: () => api.get('/doctors'),
+};
+
 export default api;
