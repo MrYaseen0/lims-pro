@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { seedAPI } from '../lib/api';
+import { seedAPI, getErrorMessage } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -26,7 +26,7 @@ export default function Login() {
       toast.success('Login successful!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Invalid credentials');
+      toast.error(getErrorMessage(error, 'Invalid credentials'));
     } finally {
       setLoading(false);
     }
