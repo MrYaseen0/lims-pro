@@ -81,11 +81,12 @@ export default function Settings() {
 
     try {
       // Using the auth register endpoint for creating users
+      // (auth travels via the httpOnly cookie)
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/register`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify(formData),
       });

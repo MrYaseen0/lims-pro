@@ -7,34 +7,39 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Restore session from the httpOnly auth cookie via /auth/me.
+  // The JWT itself is never stored in JS-accessible storage.
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    
-    if (token && storedUser) {
+    (async () => {
       try {
-        setUser(JSON.parse(storedUser));
+        const response = await authAPI.getMe();
+        setUser(response.data);
+        localStorage.setItem('user', JSON.stringify(response.data));
       } catch {
-        localStorage.removeItem('token');
+        setUser(null);
         localStorage.removeItem('user');
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    })();
   }, []);
 
   const login = useCallback(async (email, password) => {
     const response = await authAPI.login({ email, password });
-    const { access_token, user: userData } = response.data;
-    
-    localStorage.setItem('token', access_token);
+    const { user: userData } = response.data;
+
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
-    
+
     return userData;
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
+  const logout = useCallback(async () => {
+    try {
+      await authAPI.logout();
+    } catch {
+      // ignore — clear local state regardless
+    }
     localStorage.removeItem('user');
     setUser(null);
   }, []);

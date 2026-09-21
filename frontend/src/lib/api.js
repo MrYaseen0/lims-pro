@@ -6,6 +6,7 @@ const API_BASE = `${BACKEND_URL}/api`;
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE,
+  withCredentials: true, // send the httpOnly auth cookie
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,9 +29,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Don't bounce when already on the login page (avoids a reload loop
+      // now that session restore hits /auth/me on every app mount).
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -52,6 +56,7 @@ export const getErrorMessage = (error, fallback = 'Something went wrong') => {
 // Auth APIs
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
+  logout: () => api.post('/auth/logout'),
   register: (userData) => api.post('/auth/register', userData),
   getMe: () => api.get('/auth/me'),
 };

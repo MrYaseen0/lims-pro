@@ -18,6 +18,19 @@ Click "Setup Demo Data" on the login page, or call:
 ```bash
 curl -X POST {BACKEND_URL}/api/seed
 ```
+Note: seeding an already-seeded database requires an admin login (the login-page
+button works unauthenticated only on a fresh database).
+
+### Environment
+The backend requires a `JWT_SECRET` in `backend/.env` (it refuses to start without one):
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+# add to backend/.env: JWT_SECRET=<output>
+```
+
+### Local install quirks
+- Backend: `emergentintegrations` was removed from `requirements.txt` (uninstallable, unused).
+- Frontend (Node 24): `npm install --legacy-peer-deps` if you hit peer-dependency/AJV errors.
 
 ## 📋 Core Features
 

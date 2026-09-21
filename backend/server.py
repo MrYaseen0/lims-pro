@@ -1,12 +1,14 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
@@ -26,10 +28,20 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'lis-secret-key-change-in-production')
+# JWT Configuration — fail fast if the secret is not provided; a hardcoded
+# fallback would give every deployment the same signing key.
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET environment variable must be set. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
+JWT_EXPIRATION_HOURS = int(os.environ.get('JWT_EXPIRATION_HOURS', '24'))
+
+# Auth cookie settings (httpOnly so JS/XSS cannot steal the token)
+COOKIE_NAME = "lims_token"
+COOKIE_SECURE = os.environ.get('COOKIE_SECURE', 'false').lower() == 'true'
 
 # Reports directory
 REPORTS_DIR = ROOT_DIR / 'reports'
@@ -40,9 +52,30 @@ from audit_logger import AuditLogger, AuditAction, create_audit_logger
 audit_logger = create_audit_logger(db)
 
 # Create the main app
-app = FastAPI(title="Laboratory Information System API")
+async def ensure_indexes():
+    """Create MongoDB indexes for the fields we filter/sort on.
+    Non-unique on purpose so pre-existing data can never block startup."""
+    await db.users.create_index("email")
+    await db.patients.create_index("patient_id")
+    await db.patients.create_index([("created_at", -1)])
+    await db.patients.create_index("phone")
+    await db.orders.create_index("patient_id")
+    await db.orders.create_index("status")
+    await db.orders.create_index([("created_at", -1)])
+    await db.tests.create_index("code")
+    await db.samples.create_index("order_id")
+    await db.invoices.create_index("order_id")
+    await db.doctors.create_index("name")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await ensure_indexes()
+    logger.info("MongoDB indexes ensured")
+    yield
+
+app = FastAPI(title="Laboratory Information System API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -257,9 +290,13 @@ def create_token(user_data: dict) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    # Prefer the httpOnly cookie; fall back to the Authorization header
+    # for API clients / backward compatibility.
+    token = credentials.credentials if credentials else request.cookies.get(COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password": 0})
         if not user:
@@ -269,6 +306,91 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+def require_role(*allowed_roles: str):
+    """Reusable role guard, e.g. Depends(require_role("admin", "lab_manager"))."""
+    async def role_checker(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        return current_user
+    return role_checker
+
+# --- Login rate limiting (in-memory sliding window, per process) ---
+_login_attempts: Dict[str, List[datetime]] = {}
+LOGIN_RATE_LIMIT = 10          # max attempts
+LOGIN_RATE_WINDOW_SECONDS = 60 # per this many seconds
+
+def check_login_rate_limit(ip: str):
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=LOGIN_RATE_WINDOW_SECONDS)
+    attempts = [t for t in _login_attempts.get(ip, []) if t > window_start]
+    if len(attempts) >= LOGIN_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please try again in a minute.",
+        )
+    attempts.append(now)
+    _login_attempts[ip] = attempts
+
+# --- Pagination helper ---
+MAX_PAGE_SIZE = 200
+
+def paginate(page: int = 1, page_size: int = 20):
+    page = max(1, page)
+    page_size = min(max(1, page_size), MAX_PAGE_SIZE)
+    return (page - 1) * page_size, page_size
+
+# --- Automatic H/L flagging against reference ranges ---
+_RANGE_RE = re.compile(r"^\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*[-–]\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$")
+
+def parse_range_bounds(normal_range: str):
+    """Parse '12 - 17' -> (12.0, 17.0). Returns None if not parseable."""
+    m = _RANGE_RE.match(normal_range or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1)), float(m.group(2))
+    except ValueError:
+        return None
+
+def to_float(value) -> Optional[float]:
+    try:
+        return float(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+def compute_result_flags(test_doc: Optional[dict], values: Dict[str, Any]):
+    """Compare entered values against the test's reference ranges.
+
+    Returns (flags, auto_abnormal) where flags maps parameter name ->
+    'H' | 'L' | 'N'. Handles per-parameter values keyed by parameter name,
+    plus the legacy single {"value": ...} shape for single-range tests.
+    """
+    flags: Dict[str, str] = {}
+    ranges = (test_doc or {}).get("reference_ranges") or []
+    if not ranges:
+        return flags, False
+    norm_values = {str(k).strip().lower(): v for k, v in (values or {}).items()}
+    for r in ranges:
+        param = str(r.get("parameter", "")).strip()
+        bounds = parse_range_bounds(str(r.get("normal_range", "")))
+        if not param or not bounds:
+            continue
+        low, high = bounds
+        raw = norm_values.get(param.lower())
+        if raw is None and len(ranges) == 1:
+            raw = (values or {}).get("value")
+        num = to_float(raw)
+        if num is None:
+            continue
+        if num < low:
+            flags[param] = "L"
+        elif num > high:
+            flags[param] = "H"
+        else:
+            flags[param] = "N"
+    auto_abnormal = any(f in ("H", "L") for f in flags.values())
+    return flags, auto_abnormal
 
 def serialize_datetime(obj):
     if isinstance(obj, datetime):
@@ -307,7 +429,8 @@ async def register(user: UserCreate):
     return {"message": "User registered successfully", "user": user_dict}
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request, response: Response):
+    check_login_rate_limit(request.client.host if request.client else "unknown")
     user = await db.users.find_one({"email": credentials.email})
     if not user or not verify_password(credentials.password, user["password"]):
         # Audit log: Failed login attempt
@@ -334,7 +457,19 @@ async def login(credentials: UserLogin):
     
     token = create_token({"id": user["id"], "email": user["email"], "role": user["role"]})
     user_response = {k: v for k, v in user.items() if k not in ["_id", "password"]}
-    
+
+    # httpOnly cookie so JS/XSS cannot steal the token. The token is still
+    # returned in the body for non-browser API clients.
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=JWT_EXPIRATION_HOURS * 3600,
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+        path="/",
+    )
+
     # Audit log: Successful login
     await audit_logger.log(
         action=AuditAction.LOGIN,
@@ -348,16 +483,22 @@ async def login(credentials: UserLogin):
     
     return TokenResponse(access_token=token, user=user_response)
 
+@api_router.post("/auth/logout", response_model=dict)
+async def logout(response: Response):
+    response.delete_cookie(key=COOKIE_NAME, path="/")
+    return {"message": "Logged out successfully"}
+
 @api_router.get("/auth/me", response_model=dict)
 async def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 # ==================== USER ROUTES ====================
 @api_router.get("/users", response_model=List[dict])
-async def get_users(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["admin", "lab_manager"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(1000)
+async def get_users(response: Response, page: int = 1, page_size: int = 20, current_user: dict = Depends(require_role("admin", "lab_manager"))):
+    skip, limit = paginate(page, page_size)
+    total = await db.users.count_documents({})
+    users = await db.users.find({}, {"_id": 0, "password": 0}).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     return users
 
 @api_router.put("/users/{user_id}", response_model=dict)
@@ -521,7 +662,7 @@ async def create_patient(patient: PatientCreate, current_user: dict = Depends(ge
     return doc
 
 @api_router.get("/patients", response_model=List[dict])
-async def get_patients(search: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def get_patients(response: Response, search: Optional[str] = None, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     query = {}
     if search:
         query = {"$or": [
@@ -529,7 +670,10 @@ async def get_patients(search: Optional[str] = None, current_user: dict = Depend
             {"phone": {"$regex": search, "$options": "i"}},
             {"patient_id": {"$regex": search, "$options": "i"}}
         ]}
-    patients = await db.patients.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    skip, limit = paginate(page, page_size)
+    total = await db.patients.count_documents(query)
+    patients = await db.patients.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     return patients
 
 @api_router.get("/patients/{patient_id}", response_model=dict)
@@ -551,16 +695,16 @@ async def update_patient(patient_id: str, updates: dict, current_user: dict = De
     return updated
 
 @api_router.get("/doctors", response_model=List[dict])
-async def get_doctors(current_user: dict = Depends(get_current_user)):
-    doctors = await db.doctors.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+async def get_doctors(response: Response, page: int = 1, page_size: int = 100, current_user: dict = Depends(get_current_user)):
+    skip, limit = paginate(page, page_size)
+    total = await db.doctors.count_documents({})
+    doctors = await db.doctors.find({}, {"_id": 0}).sort("name", 1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     return doctors
 
 # ==================== TEST CATALOG ROUTES ====================
 @api_router.post("/tests", response_model=dict)
-async def create_test(test: TestCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["admin", "lab_manager"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
+async def create_test(test: TestCreate, current_user: dict = Depends(require_role("admin", "lab_manager"))):
     existing = await db.tests.find_one({"code": test.code})
     if existing:
         raise HTTPException(status_code=400, detail="Test code already exists")
@@ -573,13 +717,16 @@ async def create_test(test: TestCreate, current_user: dict = Depends(get_current
     return doc
 
 @api_router.get("/tests", response_model=List[dict])
-async def get_tests(category: Optional[str] = None, active_only: bool = True, current_user: dict = Depends(get_current_user)):
+async def get_tests(response: Response, category: Optional[str] = None, active_only: bool = True, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     query = {}
     if category:
         query["category"] = category
     if active_only:
         query["is_active"] = True
-    tests = await db.tests.find(query, {"_id": 0}).sort("name", 1).to_list(1000)
+    skip, limit = paginate(page, page_size)
+    total = await db.tests.count_documents(query)
+    tests = await db.tests.find(query, {"_id": 0}).sort("name", 1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     return tests
 
 @api_router.get("/tests/{test_id}", response_model=dict)
@@ -590,9 +737,7 @@ async def get_test(test_id: str, current_user: dict = Depends(get_current_user))
     return test
 
 @api_router.put("/tests/{test_id}", response_model=dict)
-async def update_test(test_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["admin", "lab_manager"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+async def update_test(test_id: str, updates: dict, current_user: dict = Depends(require_role("admin", "lab_manager"))):
     result = await db.tests.update_one({"id": test_id}, {"$set": updates})
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Test not found")
@@ -648,9 +793,12 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
 
 @api_router.get("/orders", response_model=List[dict])
 async def get_orders(
+    response: Response,
     status: Optional[str] = None, 
     patient_id: Optional[str] = None,
     priority: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -661,7 +809,10 @@ async def get_orders(
     if priority:
         query["priority"] = priority
     
-    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    skip, limit = paginate(page, page_size)
+    total = await db.orders.count_documents(query)
+    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     return orders
 
 @api_router.get("/orders/{order_id}", response_model=dict)
@@ -738,11 +889,13 @@ async def create_sample(sample: SampleCreate, current_user: dict = Depends(get_c
     return doc
 
 @api_router.get("/samples", response_model=List[dict])
-async def get_samples(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def get_samples(response: Response, status: Optional[str] = None, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     query = {}
     if status:
         query["status"] = status
-    samples = await db.samples.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    skip, limit = paginate(page, page_size)
+    total = await db.samples.count_documents(query)
+    samples = await db.samples.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     # Enrich with order info
     for sample in samples:
@@ -751,6 +904,7 @@ async def get_samples(status: Optional[str] = None, current_user: dict = Depends
             sample["patient_name"] = order.get("patient_name")
             sample["order_number"] = order.get("order_id")
     
+    response.headers["X-Total-Count"] = str(total)
     return samples
 
 @api_router.put("/samples/{sample_id}/status", response_model=dict)
@@ -767,21 +921,25 @@ async def update_sample_status(sample_id: str, status: SampleStatus, current_use
 
 # ==================== RESULT ROUTES ====================
 @api_router.post("/results", response_model=dict)
-async def enter_result(result: ResultEntry, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["technician", "lab_manager", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
+async def enter_result(result: ResultEntry, current_user: dict = Depends(require_role("technician", "lab_manager", "admin"))):
     order = await db.orders.find_one({"id": result.order_id})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
+    # Auto-compute H/L flags against the test's reference ranges
+    test_doc = await db.tests.find_one({"id": result.test_id}, {"_id": 0})
+    flags, auto_abnormal = compute_result_flags(test_doc, result.values)
+    is_abnormal = auto_abnormal or result.is_abnormal  # technician checkbox stays as manual override
+
     # Update the specific test result in the order
     tests = order.get("tests", [])
     for i, test in enumerate(tests):
         if test["test_id"] == result.test_id:
             tests[i]["result"] = {
                 "values": result.values,
-                "is_abnormal": result.is_abnormal,
+                "flags": flags,
+                "is_abnormal": is_abnormal,
+                "auto_abnormal": auto_abnormal,
                 "technician_notes": result.technician_notes,
                 "entered_by": current_user["id"],
                 "entered_at": datetime.now(timezone.utc).isoformat()
@@ -808,12 +966,16 @@ async def enter_result(result: ResultEntry, current_user: dict = Depends(get_cur
     return updated
 
 @api_router.get("/technician/queue", response_model=List[dict])
-async def get_technician_queue(current_user: dict = Depends(get_current_user)):
+async def get_technician_queue(response: Response, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     # Get orders that have samples collected but results not entered
+    skip, limit = paginate(page, page_size)
+    queue_query = {"status": {"$in": [OrderStatus.SAMPLE_COLLECTED, OrderStatus.IN_LAB]}}
+    total = await db.orders.count_documents(queue_query)
     orders = await db.orders.find(
-        {"status": {"$in": [OrderStatus.SAMPLE_COLLECTED, OrderStatus.IN_LAB]}},
+        queue_query,
         {"_id": 0}
-    ).sort("priority", -1).to_list(1000)
+    ).sort("priority", -1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     
     # Enrich with sample info
     for order in orders:
@@ -829,9 +991,7 @@ async def get_technician_queue(current_user: dict = Depends(get_current_user)):
 
 # ==================== PATHOLOGIST ROUTES ====================
 @api_router.post("/approve", response_model=dict)
-async def approve_result(approval: ResultApproval, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["pathologist", "lab_manager", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+async def approve_result(approval: ResultApproval, current_user: dict = Depends(require_role("pathologist", "lab_manager", "admin"))):
     
     order = await db.orders.find_one({"id": approval.order_id})
     if not order:
@@ -871,11 +1031,15 @@ async def approve_result(approval: ResultApproval, current_user: dict = Depends(
     return updated
 
 @api_router.get("/pathologist/queue", response_model=List[dict])
-async def get_pathologist_queue(current_user: dict = Depends(get_current_user)):
+async def get_pathologist_queue(response: Response, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
+    skip, limit = paginate(page, page_size)
+    queue_query = {"status": OrderStatus.UNDER_REVIEW}
+    total = await db.orders.count_documents(queue_query)
     orders = await db.orders.find(
-        {"status": OrderStatus.UNDER_REVIEW},
+        queue_query,
         {"_id": 0}
-    ).sort("created_at", 1).to_list(1000)
+    ).sort("created_at", 1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     
     for order in orders:
         patient = await db.patients.find_one({"id": order["patient_id"]}, {"_id": 0, "name": 1, "age": 1, "gender": 1})
@@ -886,9 +1050,7 @@ async def get_pathologist_queue(current_user: dict = Depends(get_current_user)):
 
 # ==================== REPORT ROUTES ====================
 @api_router.post("/reports/{order_id}/release", response_model=dict)
-async def release_report(order_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["pathologist", "lab_manager", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+async def release_report(order_id: str, current_user: dict = Depends(require_role("pathologist", "lab_manager", "admin"))):
     
     order = await db.orders.find_one({"id": order_id})
     if not order:
@@ -1082,11 +1244,14 @@ async def stream_pdf_report(order_id: str, current_user: dict = Depends(get_curr
 
 # ==================== BILLING ROUTES ====================
 @api_router.get("/invoices", response_model=List[dict])
-async def get_invoices(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def get_invoices(response: Response, status: Optional[str] = None, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     query = {}
     if status:
         query["payment_status"] = status
-    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    skip, limit = paginate(page, page_size)
+    total = await db.invoices.count_documents(query)
+    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    response.headers["X-Total-Count"] = str(total)
     
     for invoice in invoices:
         patient = await db.patients.find_one({"id": invoice["patient_id"]}, {"_id": 0, "name": 1, "phone": 1})
@@ -1209,7 +1374,14 @@ async def get_dashboard_analytics(current_user: dict = Depends(get_current_user)
 
 # ==================== SEED DATA ====================
 @api_router.post("/seed", response_model=dict)
-async def seed_data():
+async def seed_data(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # Bootstrap exception: an empty database (no users yet) may be seeded
+    # without auth so the very first admin can be created. Afterwards,
+    # only admins may re-run the seed.
+    if await db.users.count_documents({}) > 0:
+        current_user = await get_current_user(request, credentials)
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not authorized")
     # Idempotent seeds — safe on every call. Also refreshes databases
     # that were seeded before doctors / reference ranges existed.
     await ensure_doctors_seeded()
@@ -1278,13 +1450,26 @@ async def root():
 # Include the router
 app.include_router(api_router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: when credentials (httpOnly auth cookie) are used, browsers reject
+# `Access-Control-Allow-Origin: *`, so a wildcard is expressed as an origin
+# regex (which echoes the request origin) instead of a literal "*".
+_cors_origins = os.environ.get('CORS_ORIGINS', '*').strip()
+if _cors_origins == '*':
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in _cors_origins.split(',')],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { resultAPI, orderAPI } from '../lib/api';
+import { resultAPI, orderAPI, testAPI } from '../lib/api';
 import { formatDateTime, getStatusColor, getPriorityColor, formatStatus } from '../lib/utils';
 import {
   Loader2,
@@ -38,6 +38,8 @@ export default function TechnicianQueue() {
     is_abnormal: false,
     technician_notes: '',
   });
+  const [testRanges, setTestRanges] = useState([]);
+  const [paramValues, setParamValues] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export default function TechnicianQueue() {
     }
   };
 
-  const openResultDialog = (order, test) => {
+  const openResultDialog = async (order, test) => {
     setSelectedOrder(order);
     setSelectedTest(test);
     setResultForm({
@@ -64,7 +66,17 @@ export default function TechnicianQueue() {
       is_abnormal: false,
       technician_notes: '',
     });
+    setParamValues({});
+    setTestRanges([]);
     setResultDialogOpen(true);
+    // Load reference ranges so we can render one input per parameter
+    // and the backend can auto-flag H/L.
+    try {
+      const res = await testAPI.getById(test.test_id);
+      setTestRanges(res.data.reference_ranges || []);
+    } catch {
+      setTestRanges([]);
+    }
   };
 
   const handleSubmitResult = async (e) => {
@@ -72,13 +84,18 @@ export default function TechnicianQueue() {
     setSaving(true);
 
     try {
+      // Per-parameter values when the test has reference ranges, otherwise
+      // the legacy single value+unit shape.
+      const values = testRanges.length > 0
+        ? Object.fromEntries(
+            testRanges.map((r) => [r.parameter, paramValues[r.parameter] ?? ''])
+          )
+        : { value: resultForm.value, unit: resultForm.unit };
+
       await resultAPI.enter({
         order_id: selectedOrder.id,
         test_id: selectedTest.test_id,
-        values: {
-          value: resultForm.value,
-          unit: resultForm.unit,
-        },
+        values,
         is_abnormal: resultForm.is_abnormal,
         technician_notes: resultForm.technician_notes,
       });
@@ -231,29 +248,54 @@ export default function TechnicianQueue() {
                 <code className="text-xs text-slate-500">{selectedTest.test_code}</code>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="value">Result Value *</Label>
-                  <Input
-                    id="value"
-                    value={resultForm.value}
-                    onChange={(e) => setResultForm(prev => ({ ...prev, value: e.target.value }))}
-                    required
-                    className="mt-1.5"
-                    data-testid="result-value-input"
-                  />
+              {testRanges.length > 0 ? (
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  <p className="text-xs text-slate-500">
+                    Enter one value per parameter — abnormal values are flagged automatically (H/L).
+                  </p>
+                  {testRanges.map((r) => (
+                    <div key={r.parameter} className="grid grid-cols-[1fr_110px] gap-3 items-end">
+                      <div>
+                        <Label>{r.parameter}</Label>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Normal: {r.normal_range}{r.unit ? ` ${r.unit}` : ''}
+                        </p>
+                      </div>
+                      <Input
+                        value={paramValues[r.parameter] ?? ''}
+                        onChange={(e) => setParamValues((prev) => ({ ...prev, [r.parameter]: e.target.value }))}
+                        placeholder={r.unit || 'value'}
+                        className="mt-1.5"
+                        data-testid={`result-param-${r.parameter}`}
+                      />
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <Label htmlFor="unit">Unit</Label>
-                  <Input
-                    id="unit"
-                    value={resultForm.unit}
-                    onChange={(e) => setResultForm(prev => ({ ...prev, unit: e.target.value }))}
-                    placeholder="e.g., mg/dL"
-                    className="mt-1.5"
-                  />
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="value">Result Value *</Label>
+                    <Input
+                      id="value"
+                      value={resultForm.value}
+                      onChange={(e) => setResultForm(prev => ({ ...prev, value: e.target.value }))}
+                      required
+                      className="mt-1.5"
+                      data-testid="result-value-input"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="unit">Unit</Label>
+                    <Input
+                      id="unit"
+                      value={resultForm.unit}
+                      onChange={(e) => setResultForm(prev => ({ ...prev, unit: e.target.value }))}
+                      placeholder="e.g., mg/dL"
+                      className="mt-1.5"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -264,7 +306,7 @@ export default function TechnicianQueue() {
                 />
                 <Label htmlFor="abnormal" className="flex items-center gap-2 cursor-pointer">
                   <AlertCircle className="w-4 h-4 text-amber-600" />
-                  Mark as Abnormal
+                  Mark as Abnormal <span className="text-xs text-slate-400">(manual override — auto H/L detection still applies)</span>
                 </Label>
               </div>
 

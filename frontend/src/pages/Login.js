@@ -40,7 +40,8 @@ export default function Login() {
       setEmail('admin@lims.pro');
       setPassword('admin123');
     } catch (error) {
-      if (error.response?.data?.message === 'Data already seeded') {
+      const status = error.response?.status;
+      if (error.response?.data?.message === 'Data already seeded' || status === 403) {
         toast.info('Demo data already exists. Use admin@lims.pro / admin123');
         setEmail('admin@lims.pro');
         setPassword('admin123');

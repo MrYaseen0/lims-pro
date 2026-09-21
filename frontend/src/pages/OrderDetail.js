@@ -98,13 +98,12 @@ export default function OrderDetail() {
       const response = await reportAPI.generatePdf(order.id);
       toast.success('PDF report generated successfully');
       
-      // Open PDF in new tab
-      const token = localStorage.getItem('token');
+      // Open PDF in new tab (auth travels via the httpOnly cookie)
       const pdfUrl = `${response.data.download_url}`;
-      
+
       // Fetch with auth and open
       const pdfResponse = await fetch(`${process.env.REACT_APP_BACKEND_URL}${pdfUrl}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
       });
       
       if (pdfResponse.ok) {
@@ -128,10 +127,9 @@ export default function OrderDetail() {
     }
     
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(
         `${process.env.REACT_APP_BACKEND_URL}/api/reports/${order.id}/download/${order.pdf_filename}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { credentials: 'include' }
       );
       
       if (response.ok) {
@@ -154,10 +152,9 @@ export default function OrderDetail() {
 
   const handlePreviewPdf = async () => {
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(
         `${process.env.REACT_APP_BACKEND_URL}/api/reports/${order.id}/pdf-stream`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        { credentials: 'include' }
       );
       
       if (response.ok) {
