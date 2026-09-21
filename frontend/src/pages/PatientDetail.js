@@ -67,6 +67,7 @@ export default function PatientDetail() {
             <div>
               <h1 className="text-2xl font-bold text-slate-900 font-heading">{patient.name}</h1>
               <p className="text-slate-500">
+                <span className="text-xs uppercase tracking-wider mr-1">Serial No</span>
                 <code className="text-sm font-mono bg-slate-100 px-2 py-0.5 rounded">{patient.patient_id}</code>
               </p>
             </div>
@@ -95,6 +96,28 @@ export default function PatientDetail() {
                 </p>
               </div>
             </div>
+            {patient.father_name && (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <User className="w-5 h-5 text-slate-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Father Name</p>
+                  <p className="font-medium text-slate-900">{patient.father_name}</p>
+                </div>
+              </div>
+            )}
+            {patient.referred_by && (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-slate-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Referred By</p>
+                  <p className="font-medium text-slate-900">{patient.referred_by}</p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
                 <Phone className="w-5 h-5 text-slate-600" />
