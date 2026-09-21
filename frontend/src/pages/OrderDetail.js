@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { orderAPI, sampleAPI, reportAPI } from '../lib/api';
+import { orderAPI, sampleAPI, reportAPI, getErrorMessage } from '../lib/api';
 import { formatDateTime, getStatusColor, getPriorityColor, formatStatus, formatCurrency } from '../lib/utils';
 import {
   ArrowLeft,
@@ -86,7 +86,7 @@ export default function OrderDetail() {
       toast.success('Report released successfully');
       fetchOrder();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to release report');
+      toast.error(getErrorMessage(error, 'Failed to release report'));
     } finally {
       setReleasingReport(false);
     }
@@ -115,7 +115,7 @@ export default function OrderDetail() {
       
       fetchOrder();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to generate PDF');
+      toast.error(getErrorMessage(error, 'Failed to generate PDF'));
     } finally {
       setGeneratingPdf(false);
     }
