@@ -38,22 +38,21 @@ export default function Billing() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchInvoices();
+    const load = async () => {
+      setLoading(true);
+      try {
+        const params = {};
+        if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
+        const response = await invoiceAPI.getAll(params);
+        setInvoices(response.data);
+      } catch (error) {
+        toast.error('Failed to fetch invoices');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, [statusFilter]);
-
-  const fetchInvoices = async () => {
-    setLoading(true);
-    try {
-      const params = {};
-      if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
-      const response = await invoiceAPI.getAll(params);
-      setInvoices(response.data);
-    } catch (error) {
-      toast.error('Failed to fetch invoices');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Calculate summary stats
   const totalPending = invoices

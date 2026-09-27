@@ -166,10 +166,8 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right side - Hero image */}
-      <div 
-        className="hidden lg:block lg:w-1/2 relative bg-cover bg-center"
-        style={{ backgroundImage: 'url(https://images.pexels.com/photos/4031415/pexels-photo-4031415.jpeg)' }}
+      {/* Right side - Hero panel */}
+      <div className="hidden lg:block lg:w-1/2 relative bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-700"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/90 to-violet-600/80" />
         <div className="absolute inset-0 flex items-center justify-center p-12">

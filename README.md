@@ -72,7 +72,9 @@ Production build: `npm run build` (must pass after any UI change).
 | Billing | `/billing` | Invoices, payment status, record payments |
 | Invoice Detail | `/billing/:id` | Invoice line items, payment history |
 | Analytics | `/analytics` | Revenue trends, test volumes, order stats |
-| Settings | `/settings` | User management (register users), laboratory information (admin only) |
+| Inventory | `/inventory` | Reagent/consumable stock, lots, expiry + low-stock alerts (admin, lab manager) |
+| Quality Control | `/qc` | QC controls, Levey–Jennings chart, Westgard rule violations |
+| Settings | `/settings` | User management (register users), laboratory information, branches (admin only) |
 
 ### User roles & navigation access
 
@@ -125,18 +127,22 @@ lims-pro/
 │   │   ├── core/             # config, database, deps, pagination, security
 │   │   ├── models/           # Pydantic schemas (orders, patients, results…)
 │   │   ├── routers/          # auth, patients, orders, results, reports,
-│   │   │                     #   billing, analytics
-│   │   └── services/         # ranges.py (H/L flagging), seed_data.py
+│   │   │                     #   billing, analytics, portal, inventory, qc,
+│   │   │                     #   branches
+│   │   └── services/         # ranges.py (H/L flagging, age/gender, delta),
+│   │                         #   seed_data.py, qc.py (Westgard rules)
 │   ├── audit_logger.py       # audit event logging (active)
 │   ├── pdf_generator.py      # lab report PDF generation
-│   ├── patient_portal.py     # patient portal (exists, not mounted yet)
+│   ├── patient_portal.py     # legacy source (mounted: app/routers/portal.py)
 │   ├── config.py / locations.py
-│   └── tests/                # pytest suite (auth, roles, ranges, pagination,
-│                             #   critical values, results e2e)
+│   └── tests/                # pytest suite (auth, refresh rotation, roles,
+│                             #   ranges, age/gender ranges, delta, inventory,
+│                             #   qc, branches, pagination, critical values,
+│                             #   results e2e)
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/            # 15 pages (see Modules table)
-│   │   ├── components/       # Layout + shadcn/ui components
+│   │   ├── pages/            # 19 pages (see Modules table)
+│   │   ├── components/       # Layout + shadcn/ui components (+LabReportPreview)
 │   │   ├── context/          # AuthContext
 │   │   └── lib/              # api.js (axios client), utils.js
 │   └── package.json
@@ -153,8 +159,9 @@ All routes are prefixed with `/api`. Auth: HttpOnly cookie (`lims_token`) or
 
 ### Auth & users
 - `POST /api/auth/register` — create user (admin)
-- `POST /api/auth/login` — login, sets HttpOnly cookie (rate-limited: 10/min per IP)
-- `POST /api/auth/logout` — clear cookie
+- `POST /api/auth/login` — login, sets HttpOnly cookies (rate-limited: 10/min per IP)
+- `POST /api/auth/refresh` — rotate refresh token (opaque token, SHA-256 hash stored; reuse revokes all user tokens)
+- `POST /api/auth/logout` — revoke refresh token, clear cookies
 - `GET /api/auth/me` — current user
 - `GET /api/users`, `PUT /api/users/{user_id}` — user management (admin)
 - `POST /api/seed` — seed demo data
@@ -196,11 +203,32 @@ All routes are prefixed with `/api`. Auth: HttpOnly cookie (`lims_token`) or
 ### Analytics
 - `GET /api/analytics/dashboard` — dashboard stats
 
+### Patient portal
+- `POST /api/portal/access` — staff creates token-link/OTP access for a patient (admin, lab_manager, receptionist)
+- `GET /api/portal/reports?token=…` — patient views own approved reports (token-only, no login)
+- `GET /api/portal/access-logs` — access audit (admin)
+
+### Inventory
+- `GET /api/inventory`, `POST /api/inventory` — list/create (admin, lab_manager)
+- `GET /api/inventory/{id}`, `PUT /api/inventory/{id}`, `DELETE /api/inventory/{id}`
+- `GET /api/inventory/alerts` — expired / expiring-within-30d / low-stock buckets
+
+### Quality control
+- `GET /api/qc/controls`, `POST /api/qc/controls` — control CRUD (admin, lab_manager)
+- `POST /api/qc/controls/{id}/runs` — log a run, Westgard violations evaluated (technician+)
+- `GET /api/qc/controls/{id}/runs` — run history
+- `GET /api/qc/controls/{id}/chart-data` — points + mean/±1/2/3 SD lines + violation flags
+
+### Branches
+- `GET /api/branches` — list (any authenticated)
+- `POST /api/branches`, `PUT /api/branches/{id}`, `DELETE /api/branches/{id}` — admin only
+- Non-admin users are scoped to their `branch_id`; admin overrides with `?branch_id` or `X-Branch-Id` header
+
 ## 🧪 Testing
 
 ```bash
 cd backend
-/tmp/limsvenv/bin/pytest -q        # 44 tests: auth, roles, ranges, pagination, critical values, results e2e
+/tmp/limsvenv/bin/pytest -q        # 89 tests: auth, refresh rotation, roles, ranges, age/gender ranges,
 cd ../frontend
 npm run build                      # production build must pass after UI changes
 ```
@@ -241,22 +269,38 @@ assumed success).
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Email/SMS notifications | Not implemented | — |
-| Multi-branch/location | Not implemented | Phase-2 |
-| Age/gender-specific reference ranges | Planned | Current ranges are basic per-test/per-parameter |
-| Refresh-token rotation | Not implemented | Short-lived (8h) access cookie only |
-| Patient portal | Code exists, unmounted | `backend/patient_portal.py` not wired into `main.py` |
-| Referral commissions | Not implemented | — |
-| Inventory / QC modules | Not implemented | — |
+| Multi-branch/location | ✅ Implemented | Phase-2: `branches` collection, per-user `branch_id` scoping |
+| Age/gender-specific reference ranges | ✅ Implemented | Phase-2: most-specific match + generic fallback; delta checks vs previous results |
+| Refresh-token rotation | ✅ Implemented | Phase-2: opaque tokens, SHA-256 hashes, reuse revokes all tokens |
+| Patient portal | ✅ Implemented | Phase-2: mounted at `/api/portal/*`, token-link/OTP access |
+| Inventory / QC modules | ✅ Implemented | Phase-2: `/api/inventory`, `/api/qc` |
+| Urdu report option | ✅ Implemented | Phase-2: English/اردو toggle, RTL, system fonts |
+| Printable barcode labels | ✅ Implemented | Phase-2: `/samples/:id/label` print route |
 
-## 🗺 Phase-2 roadmap
+## 🗺 Phase-2 roadmap — status (2026-09-22)
 
-1. Mount patient portal; refresh-token rotation with hashed token identifiers
-2. Age/gender-specific reference ranges, delta checks against previous results
-3. Referral commission tracking + frontend view
-4. Inventory/reagent management with expiry alerts
-5. QC module (Levey–Jennings, Westgard rules)
-6. Multi-branch support, Urdu report option
-7. Printable barcode labels (strings already generated; print flow pending)
+1. ✅ Mount patient portal; refresh-token rotation with hashed token identifiers
+2. ✅ Age/gender-specific reference ranges, delta checks against previous results
+3. ✅ Inventory/reagent management with expiry alerts
+4. ✅ QC module (Levey–Jennings, Westgard rules)
+5. ✅ Multi-branch support, Urdu report option
+6. ✅ Printable barcode labels
+
+---
+
+## 👨‍💻 Developer
+
+**Yaseen Ahmad** — Full-Stack Developer
+
+- 🎓 BS Software Engineering, CECOS University of IT and Emerging Sciences, Peshawar (7th semester, BSSE Section C 2023)
+- 💼 Full Stack Development Intern, CECOS IT Services (Private) Limited
+- 📍 Peshawar, Khyber Pakhtunkhwa, Pakistan
+- 🐙 GitHub: https://github.com/MrYaseen0
+- 💼 LinkedIn: https://www.linkedin.com/in/yaseen-ahmad-489967280
+- 🌐 Portfolio: https://yaseenahmadexe.vercel.app
+- 📸 Instagram: https://instagram.com/yaseenahmadexe
+- 𝕏 X: https://x.com/yaseencecosian
+- ✉️ Email: yaseen.ahmad.bsse-2023c@cecosian.edu.pk
 
 ---
 

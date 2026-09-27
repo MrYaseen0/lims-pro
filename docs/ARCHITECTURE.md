@@ -6,8 +6,8 @@
 
 ### Backend (`backend/`)
 - **Entry:** `backend/server.py` — 38-line compatibility shim. `uvicorn server:app` re-exports the FastAPI app and test helpers (`db`, `init_db`, `hash_password`, `audit_logger`, …) from `backend/app/`.
-- **App:** `backend/app/main.py` — creates the FastAPI app, mounts 7 routers under `/api`, configures CORS from `CORS_ORIGINS` env.
-- **Routers** (`backend/app/routers/`): `auth`, `patients`, `orders`, `results`, `reports`, `billing`, `analytics`. Each owns its URL paths; all mounted with `prefix="/api"`.
+- **App:** `backend/app/main.py` — creates the FastAPI app, mounts 11 routers under `/api`, configures CORS from `CORS_ORIGINS` env.
+- **Routers** (`backend/app/routers/`): `auth`, `patients`, `orders`, `results`, `reports`, `billing`, `analytics`, `portal` (patient token-link access), `inventory` (reagents/consumables + alerts), `qc` (controls, runs, chart data), `branches`. Each owns its URL paths; all mounted with `prefix="/api"`.
 - **Core** (`backend/app/core/`):
   - `config.py` — env config; **fail-fast** `RuntimeError` if `JWT_SECRET` missing.
   - `database.py` — Motor (async MongoDB) client + `db` handle.
@@ -16,7 +16,9 @@
   - `pagination.py` — `paginate()` helper, `X-Total-Count` header.
 - **Services** (`backend/app/services/`): `ranges.py` (reference-range checks, H/L flags, critical-value detection), `seed_data.py` (doctors, test catalogue).
 - **Models** (`backend/app/models/schemas.py`) — Pydantic v2 request/response schemas; strict types block NoSQL operator injection.
-- **Standalone:** `backend/patient_portal.py` (exists, **unmounted**), `backend/audit_logger.py` (active, writes audit trail).
+- **Standalone:** `backend/patient_portal.py` (legacy source; the mounted implementation lives in `app/routers/portal.py`), `backend/audit_logger.py` (active, writes audit trail).
+- **Auth:** access via HttpOnly JWT cookie (`samesite=lax`) plus opaque refresh tokens — only SHA-256 digests stored in `refresh_tokens`; rotation on `/api/auth/refresh`, reuse revokes all user tokens.
+- **Multi-branch:** `branches` collection; `branch_id` on users/patients/orders/inventory_items; non-admin scoped to own branch, admin override via `?branch_id`/`X-Branch-Id`.
 
 ### Frontend (`frontend/`)
 - React 18 + Tailwind. Entry `src/index.js` → `src/App.js`.

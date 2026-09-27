@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { patientAPI } from '../lib/api';
 import { formatDate, formatDateTime, getStatusColor, formatStatus, formatCurrency } from '../lib/utils';
@@ -26,11 +26,7 @@ export default function PatientDetail() {
   const [patient, setPatient] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchPatient();
-  }, [id]);
-
-  const fetchPatient = async () => {
+  const fetchPatient = useCallback(async () => {
     try {
       const response = await patientAPI.getById(id);
       setPatient(response.data);
@@ -40,7 +36,11 @@ export default function PatientDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchPatient();
+  }, [fetchPatient]);
 
   if (loading) {
     return (

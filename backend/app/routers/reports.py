@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime, timezone
 
+from bson import Binary
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -106,9 +107,28 @@ async def generate_pdf_report(order_id: str, current_user: dict = Depends(get_cu
     try:
         # Generate PDF
         pdf_buffer = generate_report_pdf(order, patient, pathologist_name, lab_info)
-        
-        # Save PDF to file
-        filename = save_report_pdf(pdf_buffer, order["order_id"], str(REPORTS_DIR))
+        pdf_bytes = pdf_buffer.getvalue()
+
+        # Save PDF to file (best-effort; skipped on read-only serverless filesystems)
+        try:
+            filename = save_report_pdf(pdf_buffer, order["order_id"], str(REPORTS_DIR))
+        except OSError as e:
+            logger.warning(f"Filesystem PDF save skipped (serverless FS): {e}")
+            filename = f"report_{order['order_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf"
+
+        # Store PDF bytes in MongoDB so downloads work on serverless (no shared FS)
+        await db.report_pdfs.update_one(
+            {"order_id": order_id},
+            {"$set": {
+                "order_id": order_id,
+                "filename": filename,
+                "pdf": Binary(pdf_bytes),
+                "size": len(pdf_bytes),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_by": current_user["id"],
+            }},
+            upsert=True,
+        )
         
         # Store PDF reference in order
         pdf_url = f"/api/reports/{order_id}/download/{filename}"
@@ -145,7 +165,19 @@ async def download_pdf_report(order_id: str, filename: str, current_user: dict =
     # Verify filename matches order's PDF
     if order.get("pdf_filename") != filename:
         raise HTTPException(status_code=404, detail="PDF not found for this order")
-    
+
+    # Serve from MongoDB first (works on serverless, no shared filesystem)
+    stored = await db.report_pdfs.find_one({"order_id": order_id})
+    if stored and stored.get("pdf"):
+        from io import BytesIO
+        pdf_bytes = bytes(stored["pdf"])
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=LabReport_{order.get('order_id', order_id)}.pdf"},
+        )
+
+    # Fallback: filesystem (local dev / single-server deploys)
     filepath = REPORTS_DIR / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="PDF file not found")

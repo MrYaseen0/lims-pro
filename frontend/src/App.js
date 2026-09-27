@@ -20,6 +20,9 @@ import Billing from "./pages/Billing";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
+import Inventory from "./pages/Inventory";
+import QC from "./pages/QC";
+import SampleLabel from "./pages/SampleLabel";
 import Layout from "./components/Layout";
 
 // Protected Route Component
@@ -39,6 +42,26 @@ function ProtectedRoute({ children }) {
   }
 
   return <Layout>{children}</Layout>;
+}
+
+// Protected route WITHOUT the app chrome (sidebar/header) — for print pages
+// like the sample label that render their own minimal markup.
+function ProtectedBare({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
 }
 
 // Public Route - redirect to dashboard if already logged in
@@ -135,6 +158,30 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Samples />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/samples/:id/label"
+        element={
+          <ProtectedBare>
+            <SampleLabel />
+          </ProtectedBare>
+        }
+      />
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute>
+            <Inventory />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/qc"
+        element={
+          <ProtectedRoute>
+            <QC />
           </ProtectedRoute>
         }
       />

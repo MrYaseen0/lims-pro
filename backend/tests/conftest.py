@@ -24,7 +24,8 @@ import server  # noqa: E402  (import after env setup is intentional)
 COLLECTIONS = [
     "users", "patients", "orders", "samples", "tests", "doctors",
     "invoices", "audit_logs", "portal_sessions", "portal_otps",
-    "refresh_tokens", "critical_alerts",
+    "portal_access_logs", "refresh_tokens", "critical_alerts",
+    "inventory_items", "qc_controls", "qc_runs", "branches",
 ]
 
 

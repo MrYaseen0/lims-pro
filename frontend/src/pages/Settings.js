@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { userAPI } from '../lib/api';
+import { userAPI, branchAPI, getErrorMessage } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, getInitials } from '../lib/utils';
 import {
@@ -12,6 +12,8 @@ import {
   Edit,
   CheckCircle,
   XCircle,
+  Trash2,
+  MapPin,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -46,6 +48,8 @@ const ROLES = [
   { value: 'collection_staff', label: 'Collection Staff' },
 ];
 
+const EMPTY_BRANCH_FORM = { name: '', code: '', address: '', phone: '' };
+
 export default function Settings() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,9 +64,79 @@ export default function Settings() {
   });
   const { user: currentUser } = useAuth();
 
+  // Branches (admin only — this page is admin-gated by the nav)
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [editingBranch, setEditingBranch] = useState(null);
+  const [branchForm, setBranchForm] = useState(EMPTY_BRANCH_FORM);
+  const [savingBranch, setSavingBranch] = useState(false);
+  const [deleteBranchId, setDeleteBranchId] = useState(null);
+
   useEffect(() => {
     fetchUsers();
+    fetchBranches();
   }, []);
+
+  const fetchBranches = async () => {
+    try {
+      const response = await branchAPI.getAll();
+      setBranches(response.data);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to fetch branches'));
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const openAddBranch = () => {
+    setEditingBranch(null);
+    setBranchForm(EMPTY_BRANCH_FORM);
+    setBranchDialogOpen(true);
+  };
+
+  const openEditBranch = (branch) => {
+    setEditingBranch(branch);
+    setBranchForm({
+      name: branch.name || '',
+      code: branch.code || '',
+      address: branch.address || '',
+      phone: branch.phone || '',
+    });
+    setBranchDialogOpen(true);
+  };
+
+  const handleSaveBranch = async (e) => {
+    e.preventDefault();
+    setSavingBranch(true);
+    try {
+      if (editingBranch) {
+        await branchAPI.update(editingBranch.id, branchForm);
+        toast.success('Branch updated');
+      } else {
+        await branchAPI.create(branchForm);
+        toast.success('Branch created');
+      }
+      setBranchDialogOpen(false);
+      fetchBranches();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to save branch'));
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
+  const handleDeleteBranch = async () => {
+    if (!deleteBranchId) return;
+    try {
+      await branchAPI.remove(deleteBranchId);
+      toast.success('Branch deleted');
+      setDeleteBranchId(null);
+      fetchBranches();
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to delete branch'));
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -151,6 +225,10 @@ export default function Settings() {
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Users
+          </TabsTrigger>
+          <TabsTrigger value="branches" className="flex items-center gap-2">
+            <MapPin className="w-4 h-4" />
+            Branches
           </TabsTrigger>
           <TabsTrigger value="lab" className="flex items-center gap-2">
             <Building className="w-4 h-4" />
@@ -338,6 +416,175 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="branches" className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold font-heading">Branch Management</h2>
+            <Button onClick={openAddBranch} className="bg-indigo-600 hover:bg-indigo-700" data-testid="add-branch-btn">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Branch
+            </Button>
+          </div>
+
+          {branchesLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+            </div>
+          ) : branches.length === 0 ? (
+            <Card className="border border-slate-200">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <MapPin className="w-12 h-12 text-slate-300 mb-4" />
+                <h3 className="text-lg font-semibold text-slate-900">No branches yet</h3>
+                <p className="text-slate-500 mt-1">Add your first lab branch</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Code</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Address</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Phone</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branches.map((branch) => (
+                      <tr
+                        key={branch.id}
+                        className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors"
+                        data-testid={`branch-row-${branch.id}`}
+                      >
+                        <td className="px-4 py-3 font-medium text-slate-900">{branch.name}</td>
+                        <td className="px-4 py-3">
+                          <code className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded">
+                            {branch.code || '-'}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-500">{branch.address || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-slate-500">{branch.phone || '-'}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => openEditBranch(branch)} data-testid={`edit-branch-${branch.id}`}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-rose-600 hover:text-rose-700"
+                              onClick={() => setDeleteBranchId(branch.id)}
+                              data-testid={`delete-branch-${branch.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Add/Edit branch dialog */}
+          <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="font-heading">
+                  {editingBranch ? 'Edit Branch' : 'Add Branch'}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSaveBranch} className="space-y-4 mt-4">
+                <div>
+                  <Label htmlFor="branch-name">Name *</Label>
+                  <Input
+                    id="branch-name"
+                    value={branchForm.name}
+                    onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })}
+                    required
+                    className="mt-1.5"
+                    data-testid="branch-name-input"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="branch-code">Code *</Label>
+                  <Input
+                    id="branch-code"
+                    value={branchForm.code}
+                    onChange={(e) => setBranchForm({ ...branchForm, code: e.target.value })}
+                    placeholder="e.g. MAIN, NORTH"
+                    required
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="branch-address">Address</Label>
+                  <Input
+                    id="branch-address"
+                    value={branchForm.address}
+                    onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="branch-phone">Phone</Label>
+                  <Input
+                    id="branch-phone"
+                    value={branchForm.phone}
+                    onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setBranchDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                    disabled={savingBranch}
+                    data-testid="save-branch-btn"
+                  >
+                    {savingBranch ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : editingBranch ? (
+                      'Save Changes'
+                    ) : (
+                      'Add Branch'
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete branch confirm */}
+          <Dialog open={!!deleteBranchId} onOpenChange={(open) => !open && setDeleteBranchId(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="font-heading">Delete Branch</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-slate-600 mt-2">
+                Are you sure you want to delete this branch? This cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button variant="outline" onClick={() => setDeleteBranchId(null)}>
+                  Cancel
+                </Button>
+                <Button className="bg-rose-600 hover:bg-rose-700" onClick={handleDeleteBranch}>
+                  Delete
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="lab" className="space-y-6">

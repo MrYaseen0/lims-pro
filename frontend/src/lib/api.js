@@ -19,22 +19,88 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Branch scoping: admin users may pin a branch via the header selector.
+    const storedUser = localStorage.getItem('user');
+    const branchId = localStorage.getItem('branch_id');
+    if (branchId && storedUser) {
+      try {
+        if (JSON.parse(storedUser)?.role === 'admin') {
+          config.headers['X-Branch-Id'] = branchId;
+        }
+      } catch {
+        // ignore malformed stored user
+      }
+    }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
+const handleUnauthorized = () => {
+  localStorage.removeItem('user');
+  localStorage.removeItem('token');
+  // Don't bounce when already on the login page (avoids a reload loop
+  // now that session restore hits /auth/me on every app mount).
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login';
+  }
+};
+
+// Silent token rotation: on 401 (except for /auth/login and /auth/refresh
+// themselves, and only one retry per request via _retry), hit
+// POST /api/auth/refresh (which rotates the refresh cookie) and replay the
+// original request. Concurrent 401s queue behind a single refresh call.
+let isRefreshing = false;
+let refreshQueue = [];
+
+const processRefreshQueue = (error) => {
+  refreshQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error);
+    else resolve();
+  });
+  refreshQueue = [];
+};
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('user');
-      // Don't bounce when already on the login page (avoids a reload loop
-      // now that session restore hits /auth/me on every app mount).
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config || {};
+    const url = originalRequest.url || '';
+    const status = error.response?.status;
+    const isAuthCall = url.includes('/auth/login') || url.includes('/auth/refresh');
+
+    if (status === 401 && !isAuthCall && !originalRequest._retry) {
+      if (isRefreshing) {
+        try {
+          await new Promise((resolve, reject) => {
+            refreshQueue.push({ resolve, reject });
+          });
+          originalRequest._retry = true;
+          return api(originalRequest);
+        } catch (queueError) {
+          return Promise.reject(queueError);
+        }
       }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+      try {
+        await api.post('/auth/refresh');
+        processRefreshQueue(null);
+        return api(originalRequest);
+      } catch (refreshError) {
+        processRefreshQueue(refreshError);
+        // Refresh failed (cookie invalid/expired) → existing logout-redirect.
+        handleUnauthorized();
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    if (status === 401) {
+      handleUnauthorized();
     }
     return Promise.reject(error);
   }
@@ -57,8 +123,38 @@ export const getErrorMessage = (error, fallback = 'Something went wrong') => {
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   logout: () => api.post('/auth/logout'),
+  refresh: () => api.post('/auth/refresh'),
   register: (userData) => api.post('/auth/register', userData),
   getMe: () => api.get('/auth/me'),
+};
+
+// Inventory APIs
+export const inventoryAPI = {
+  getAll: (params) => api.get('/inventory', { params }),
+  getById: (id) => api.get(`/inventory/${id}`),
+  create: (data) => api.post('/inventory', data),
+  update: (id, data) => api.put(`/inventory/${id}`, data),
+  remove: (id) => api.delete(`/inventory/${id}`),
+  getAlerts: () => api.get('/inventory/alerts'),
+};
+
+// QC APIs
+export const qcAPI = {
+  getControls: () => api.get('/qc/controls'),
+  createControl: (data) => api.post('/qc/controls', data),
+  updateControl: (id, data) => api.put(`/qc/controls/${id}`, data),
+  deleteControl: (id) => api.delete(`/qc/controls/${id}`),
+  logRun: (id, data) => api.post(`/qc/controls/${id}/runs`, data),
+  getRuns: (id) => api.get(`/qc/controls/${id}/runs`),
+  getChartData: (id) => api.get(`/qc/controls/${id}/chart-data`),
+};
+
+// Branch APIs
+export const branchAPI = {
+  getAll: () => api.get('/branches'),
+  create: (data) => api.post('/branches', data),
+  update: (id, data) => api.put(`/branches/${id}`, data),
+  remove: (id) => api.delete(`/branches/${id}`),
 };
 
 // Patient APIs
@@ -107,6 +203,8 @@ export const resultAPI = {
 export const pathologistAPI = {
   getQueue: () => api.get('/pathologist/queue'),
   approve: (data) => api.post('/approve', data),
+  getCriticalAlerts: (status = 'pending') => api.get('/critical-alerts', { params: { status } }),
+  acknowledgeAlert: (alertId) => api.post(`/critical-alerts/${alertId}/acknowledge`),
 };
 
 // Report APIs

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { patientAPI, doctorAPI, getErrorMessage } from '../lib/api';
 import { formatDate, formatDateTime, getStatusColor, formatStatus, debounce } from '../lib/utils';
@@ -59,21 +59,16 @@ export default function Patients() {
   });
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchPatients();
-    fetchDoctors();
-  }, [page, pageSize]);
-
-  const fetchDoctors = async () => {
+  const fetchDoctors = useCallback(async () => {
     try {
       const response = await doctorAPI.getAll();
       setDoctors(response.data);
     } catch (error) {
       // Doctors list is optional; "Self" is always available
     }
-  };
+  }, []);
 
-  const fetchPatients = async (searchTerm = search) => {
+  const fetchPatients = useCallback(async (searchTerm = search) => {
     setLoading(true);
     try {
       const response = await patientAPI.getAll({
@@ -88,7 +83,12 @@ export default function Patients() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, page, pageSize]);
+
+  useEffect(() => {
+    fetchPatients();
+    fetchDoctors();
+  }, [fetchPatients, fetchDoctors]);
 
   const handleSearch = debounce((value) => {
     setPage(1);

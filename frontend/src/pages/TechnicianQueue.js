@@ -9,6 +9,7 @@ import {
   CheckCircle,
   User,
   Clock,
+  X,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -32,6 +33,7 @@ export default function TechnicianQueue() {
   const [selectedTest, setSelectedTest] = useState(null);
   const [resultDialogOpen, setResultDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deltaWarnings, setDeltaWarnings] = useState(null);
   const [resultForm, setResultForm] = useState({
     value: '',
     unit: '',
@@ -92,7 +94,7 @@ export default function TechnicianQueue() {
           )
         : { value: resultForm.value, unit: resultForm.unit };
 
-      await resultAPI.enter({
+      const response = await resultAPI.enter({
         order_id: selectedOrder.id,
         test_id: selectedTest.test_id,
         values,
@@ -101,6 +103,23 @@ export default function TechnicianQueue() {
       });
 
       toast.success('Result submitted successfully');
+
+      // Delta check: warn when a parameter moved more than its delta limit
+      // vs the patient's previous result.
+      const warnings = response.data?.delta_warnings;
+      if (warnings && warnings.length > 0) {
+        toast.warning(
+          warnings
+            .map((w) => `${w.parameter} changed ${Math.round(w.change_percent)}% vs previous`)
+            .join('; '),
+          { duration: 8000 }
+        );
+        setDeltaWarnings({
+          testName: selectedTest.test_name,
+          warnings,
+        });
+      }
+
       setResultDialogOpen(false);
       fetchQueue();
     } catch (error) {
@@ -132,6 +151,38 @@ export default function TechnicianQueue() {
           {queue.length} order(s) pending
         </Badge>
       </div>
+
+      {/* Delta warning banner */}
+      {deltaWarnings && (
+        <div
+          className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg"
+          data-testid="delta-warning-banner"
+        >
+          <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-amber-800">
+              Delta check: large change vs previous result ({deltaWarnings.testName})
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {deltaWarnings.warnings.map((w) => (
+                <Badge
+                  key={w.parameter}
+                  className="bg-amber-100 text-amber-800 border border-amber-300"
+                >
+                  {w.parameter}: {w.previous_value} → {w.current_value} ({Math.round(w.change_percent)}%)
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => setDeltaWarnings(null)}
+            className="text-amber-500 hover:text-amber-700 p-1"
+            aria-label="Dismiss delta warning"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Queue */}
       {loading ? (

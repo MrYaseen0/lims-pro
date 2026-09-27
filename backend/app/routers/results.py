@@ -8,11 +8,34 @@ from app.core.database import db
 from app.core.deps import get_current_user, require_role
 from app.core.pagination import paginate
 from app.models.schemas import Test, TestCreate, ResultEntry, ResultApproval, OrderStatus
-from app.services.ranges import compute_result_flags, check_critical_values
+from app.services.ranges import compute_result_flags, check_critical_values, check_delta, match_range_entry
 import uuid
 
 
 router = APIRouter()
+
+
+async def _find_previous_value(patient_id, exclude_order_id, test_id, parameter):
+    """Most recent previous value for the same test+parameter across the
+    patient's other orders (latest entered_at wins). Returns None if none."""
+    if not patient_id:
+        return None
+    wanted = str(parameter).strip().lower()
+    best = None  # (entered_at, value)
+    async for o in db.orders.find(
+        {"patient_id": patient_id, "id": {"$ne": exclude_order_id}},
+        {"_id": 0, "tests": 1},
+    ):
+        for t in o.get("tests", []):
+            if t.get("test_id") != test_id:
+                continue
+            res = t.get("result") or {}
+            for k, v in (res.get("values") or {}).items():
+                if str(k).strip().lower() == wanted:
+                    entered = res.get("entered_at") or ""
+                    if best is None or entered > best[0]:
+                        best = (entered, v)
+    return best[1] if best else None
 
 
 @router.post("/tests", response_model=dict)
@@ -68,10 +91,35 @@ async def enter_result(result: ResultEntry, current_user: dict = Depends(require
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    # Patient demographics drive age/gender-specific reference ranges
+    patient = await db.patients.find_one({"id": order.get("patient_id")}, {"_id": 0})
+    age_years = patient.get("age") if patient else None
+    gender = patient.get("gender") if patient else None
+
     # Auto-compute H/L flags against the test's reference ranges
     test_doc = await db.tests.find_one({"id": result.test_id}, {"_id": 0})
-    flags, auto_abnormal = compute_result_flags(test_doc, result.values)
+    flags, auto_abnormal = compute_result_flags(test_doc, result.values, age_years, gender)
     is_abnormal = auto_abnormal or result.is_abnormal  # technician checkbox stays as manual override
+
+    # Delta check: compare each value against the patient's most recent
+    # previous result for the same test+parameter.
+    ranges = (test_doc or {}).get("reference_ranges") or []
+    single_value_shape = set((result.values or {}).keys()) == {"value"} and len(ranges) == 1
+    delta = {}
+    delta_warnings = []
+    for param, current_value in (result.values or {}).items():
+        entry = ranges[0] if single_value_shape else match_range_entry(ranges, param, age_years, gender)
+        limit = (entry or {}).get("delta_limit_percent", 20)
+        prev_value = await _find_previous_value(order.get("patient_id"), result.order_id, result.test_id, param)
+        check = check_delta(prev_value, current_value, limit)
+        if check and check["warning"]:
+            delta[param] = {
+                "previous_value": check["previous_value"],
+                "current_value": check["current_value"],
+                "change_percent": check["change_percent"],
+                "warning": True,
+            }
+            delta_warnings.append({"parameter": param, **delta[param]})
 
     # Update the specific test result in the order
     tests = order.get("tests", [])
@@ -86,6 +134,8 @@ async def enter_result(result: ResultEntry, current_user: dict = Depends(require
                 "entered_by": current_user["id"],
                 "entered_at": datetime.now(timezone.utc).isoformat()
             }
+            if delta:
+                tests[i]["result"]["delta"] = delta
             tests[i]["status"] = "completed"
             break
     
@@ -129,6 +179,8 @@ async def enter_result(result: ResultEntry, current_user: dict = Depends(require
     # Include critical alert info in response
     if criticals:
         updated["_critical_alerts"] = criticals
+    if delta_warnings:
+        updated["delta_warnings"] = delta_warnings
     return updated
 
 @router.get("/technician/queue", response_model=List[dict])

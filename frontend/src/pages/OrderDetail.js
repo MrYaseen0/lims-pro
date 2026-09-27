@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { orderAPI, sampleAPI, reportAPI, getErrorMessage } from '../lib/api';
 import { formatDateTime, getStatusColor, getPriorityColor, formatStatus, formatCurrency } from '../lib/utils';
@@ -21,6 +21,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
+import LabReportPreview from '../components/LabReportPreview';
 import { toast } from 'sonner';
 
 const STATUS_STEPS = [
@@ -41,11 +42,7 @@ export default function OrderDetail() {
   const [releasingReport, setReleasingReport] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
-  useEffect(() => {
-    fetchOrder();
-  }, [id]);
-
-  const fetchOrder = async () => {
+  const fetchOrder = useCallback(async () => {
     try {
       const response = await orderAPI.getById(id);
       setOrder(response.data);
@@ -55,7 +52,11 @@ export default function OrderDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchOrder();
+  }, [fetchOrder]);
 
   const handleCollectSample = async () => {
     setCollectingSample(true);
@@ -314,6 +315,11 @@ export default function OrderDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Printable lab report (English / اردو) */}
+          {(order.status === 'approved' || order.status === 'report_released') && (
+            <LabReportPreview orderId={order.id} />
+          )}
+
           {/* Tests */}
           <Card className="border border-slate-200">
             <CardHeader className="pb-3">

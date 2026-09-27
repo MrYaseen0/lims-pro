@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { invoiceAPI } from '../lib/api';
 import { formatDateTime, getStatusColor, formatStatus, formatCurrency } from '../lib/utils';
@@ -46,11 +46,7 @@ export default function InvoiceDetail() {
     reference: '',
   });
 
-  useEffect(() => {
-    fetchInvoice();
-  }, [id]);
-
-  const fetchInvoice = async () => {
+  const fetchInvoice = useCallback(async () => {
     try {
       const response = await invoiceAPI.getById(id);
       setInvoice(response.data);
@@ -60,7 +56,11 @@ export default function InvoiceDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate]);
+
+  useEffect(() => {
+    fetchInvoice();
+  }, [fetchInvoice]);
 
   const calculatePaid = () => {
     return (invoice?.payments || []).reduce((sum, p) => sum + p.amount, 0);

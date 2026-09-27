@@ -26,9 +26,14 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const response = await authAPI.login({ email, password });
-    const { user: userData } = response.data;
+    const { user: userData, access_token } = response.data;
 
     localStorage.setItem('user', JSON.stringify(userData));
+    // The access token is returned in the login body; keep the existing
+    // localStorage token flow (the axios request interceptor reads it).
+    if (access_token) {
+      localStorage.setItem('token', access_token);
+    }
     setUser(userData);
 
     return userData;
@@ -41,6 +46,7 @@ export function AuthProvider({ children }) {
       // ignore — clear local state regardless
     }
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
     setUser(null);
   }, []);
 

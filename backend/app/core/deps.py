@@ -43,6 +43,22 @@ def require_role(*allowed_roles: str):
         return current_user
     return role_checker
 
+
+async def get_branch_scope(request: Request, current_user: dict = Depends(get_current_user)):
+    """Resolve the branch a request is scoped to.
+
+    Admins may override via ?branch_id=... or the X-Branch-Id header (either
+    allowed); None means global (no scoping). Non-admins are pinned to their
+    own branch_id, falling back to the default branch when unset.
+    """
+    if current_user.get("role") == "admin":
+        return request.query_params.get("branch_id") or request.headers.get("X-Branch-Id")
+    branch_id = current_user.get("branch_id")
+    if branch_id:
+        return branch_id
+    from app.services.seed_data import get_default_branch_id
+    return await get_default_branch_id()
+
 # --- Login rate limiting (in-memory sliding window, per process) ---
 _login_attempts: Dict[str, List[datetime]] = {}
 LOGIN_RATE_LIMIT = 10          # max attempts

@@ -82,3 +82,20 @@ async def ensure_indexes():
     await db.samples.create_index("order_id")
     await db.invoices.create_index("order_id")
     await db.doctors.create_index("name")
+    await db.refresh_tokens.create_index("token_hash")
+    await db.refresh_tokens.create_index("user_id")
+    await db.portal_sessions.create_index("token_hash")
+    await db.portal_sessions.create_index("patient_id")
+    await db.portal_otps.create_index("otp_hash")
+    await db.portal_access_logs.create_index("patient_id")
+    await db.portal_access_logs.create_index([("timestamp", -1)])
+    await db.inventory_items.create_index("branch_id")
+    await db.inventory_items.create_index("name")
+    await db.qc_controls.create_index("test_id")
+    await db.qc_runs.create_index("control_id")
+    await db.qc_runs.create_index("date")
+    await db.branches.create_index("code")
+    # Seed the default branch + backfill branch_id on legacy docs.
+    # Imported here to avoid a circular import at module load.
+    from app.services.seed_data import ensure_default_branch
+    await ensure_default_branch()

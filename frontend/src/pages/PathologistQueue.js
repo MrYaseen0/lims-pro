@@ -27,6 +27,9 @@ import { toast } from 'sonner';
 export default function PathologistQueue() {
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [acking, setAcking] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedTest, setSelectedTest] = useState(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
@@ -36,6 +39,7 @@ export default function PathologistQueue() {
 
   useEffect(() => {
     fetchQueue();
+    fetchAlerts();
   }, []);
 
   const fetchQueue = async () => {
@@ -46,6 +50,30 @@ export default function PathologistQueue() {
       toast.error('Failed to fetch review queue');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAlerts = async () => {
+    try {
+      const response = await pathologistAPI.getCriticalAlerts('pending');
+      setAlerts(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch critical alerts');
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const handleAcknowledge = async (alertId) => {
+    setAcking(alertId);
+    try {
+      await pathologistAPI.acknowledgeAlert(alertId);
+      toast.success('Critical alert acknowledged');
+      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    } catch (error) {
+      toast.error('Failed to acknowledge alert');
+    } finally {
+      setAcking(null);
     }
   };
 
@@ -88,6 +116,53 @@ export default function PathologistQueue() {
           {queue.length} order(s) pending review
         </Badge>
       </div>
+
+      {/* Critical Alerts */}
+      {!alertsLoading && alerts.length > 0 && (
+        <div className="space-y-3" data-testid="critical-alerts">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-rose-600" />
+            <h2 className="text-lg font-bold text-slate-900 font-heading">Critical Alerts</h2>
+            <Badge className="bg-rose-100 text-rose-700">{alerts.length} pending</Badge>
+          </div>
+          {alerts.map((alert) => (
+            <Card key={alert.id} className="border-rose-300 bg-rose-50/50" data-testid={`critical-alert-${alert.id}`}>
+              <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4 py-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-slate-900">{alert.parameter}</p>
+                    <Badge className="bg-rose-600 text-white">
+                      {alert.direction === 'critical_low' ? 'CRITICAL LOW' : 'CRITICAL HIGH'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Value <span className="font-mono font-bold text-rose-700">{alert.value}</span>
+                    {' '}— critical threshold:{' '}
+                    <span className="font-mono">
+                      {alert.direction === 'critical_low' ? `< ${alert.critical_low}` : `> ${alert.critical_high}`}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {alert.patient ? `${alert.patient.name} (${alert.patient.patient_id})` : 'Unknown patient'}
+                    {' '}· {formatDateTime(alert.created_at)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-rose-300 text-rose-700 hover:bg-rose-100 shrink-0"
+                  onClick={() => handleAcknowledge(alert.id)}
+                  disabled={acking === alert.id}
+                  data-testid={`ack-alert-${alert.id}`}
+                >
+                  {acking === alert.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                  Acknowledge
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Queue */}
       {loading ? (

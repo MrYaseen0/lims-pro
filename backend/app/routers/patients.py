@@ -1,11 +1,11 @@
 """Patient and referring-doctor routes."""
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from audit_logger import AuditAction
 from app.core.database import db, audit_logger
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_branch_scope
 from app.core.pagination import paginate
 from app.models.schemas import Patient, PatientCreate
 from app.services.seed_data import next_patient_serial
@@ -15,13 +15,14 @@ router = APIRouter()
 
 
 @router.post("/patients", response_model=dict)
-async def create_patient(patient: PatientCreate, current_user: dict = Depends(get_current_user)):
+async def create_patient(patient: PatientCreate, request: Request, current_user: dict = Depends(get_current_user)):
     patient_obj = Patient(**patient.model_dump())
     # Yearly serial number: 0001-09-2026 (counter-month-year)
     patient_obj.patient_id = await next_patient_serial()
     patient_obj.created_by = current_user["id"]
     doc = patient_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
+    doc["branch_id"] = await get_branch_scope(request, current_user)
     await db.patients.insert_one(doc)
     doc.pop("_id", None)
     
@@ -40,14 +41,17 @@ async def create_patient(patient: PatientCreate, current_user: dict = Depends(ge
     return doc
 
 @router.get("/patients", response_model=List[dict])
-async def get_patients(response: Response, search: Optional[str] = None, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
+async def get_patients(response: Response, request: Request, search: Optional[str] = None, page: int = 1, page_size: int = 20, current_user: dict = Depends(get_current_user)):
     query = {}
+    branch_id = await get_branch_scope(request, current_user)
+    if branch_id:
+        query["branch_id"] = branch_id
     if search:
-        query = {"$or": [
+        query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
             {"phone": {"$regex": search, "$options": "i"}},
             {"patient_id": {"$regex": search, "$options": "i"}}
-        ]}
+        ]
     skip, limit = paginate(page, page_size)
     total = await db.patients.count_documents(query)
     patients = await db.patients.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)

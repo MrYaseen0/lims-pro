@@ -9,7 +9,7 @@ from starlette.responses import Response
 
 from app.core import config
 from app.core.database import init_db, ensure_indexes, get_client
-from app.routers import auth, patients, orders, results, reports, billing, analytics
+from app.routers import auth, patients, orders, results, reports, billing, analytics, portal, inventory, qc, branches
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -50,6 +50,10 @@ app.include_router(results.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(portal.router, prefix="/api")
+app.include_router(inventory.router, prefix="/api")
+app.include_router(qc.router, prefix="/api")
+app.include_router(branches.router, prefix="/api")
 
 
 @app.get("/api/")

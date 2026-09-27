@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { orderAPI, patientAPI, testAPI } from '../lib/api';
 import { formatDateTime, getStatusColor, getPriorityColor, formatStatus, formatCurrency } from '../lib/utils';
@@ -41,11 +41,7 @@ export default function Orders() {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchOrders();
-  }, [statusFilter, priorityFilter]);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -58,7 +54,11 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, priorityFilter]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
   return (
     <div className="space-y-6 animate-fade-in" data-testid="orders-page">

@@ -141,3 +141,52 @@ async def test_acknowledge_critical_alert(client):
     # Verify in DB
     updated = await server.db.critical_alerts.find_one({"id": alert_id})
     assert updated["status"] == "acknowledged"
+
+
+@pytest.mark.asyncio
+async def test_seeded_ranges_include_critical_thresholds(client):
+    """Fresh deployments must ship critical thresholds so panic alerts can fire."""
+    from app.services.seed_data import ensure_test_reference_ranges, REFERENCE_RANGES
+
+    await ensure_test_reference_ranges()
+    cbc = await server.db.tests.find_one({"code": "CBC"})
+    assert cbc and cbc.get("reference_ranges"), "CBC ranges not seeded"
+    by_param = {r["parameter"]: r for r in cbc["reference_ranges"]}
+    assert by_param["Hemoglobin (Hb)"]["critical_low"] == 7.0
+    assert by_param["Hemoglobin (Hb)"]["critical_high"] == 20.0
+    assert by_param["TLC (WBC)"]["critical_low"] == 2000
+    assert by_param["Platelet Count"]["critical_high"] == 1000000
+
+    # Backfill must not overwrite an admin-customized threshold.
+    await server.db.tests.update_one(
+        {"code": "CBC", "reference_ranges.parameter": "Hemoglobin (Hb)"},
+        {"$set": {"reference_ranges.$.critical_high": 21.5}},
+    )
+    await ensure_test_reference_ranges()
+    cbc = await server.db.tests.find_one({"code": "CBC"})
+    hb = next(r for r in cbc["reference_ranges"] if r["parameter"] == "Hemoglobin (Hb)")
+    assert hb["critical_high"] == 21.5, "admin customization was overwritten"
+    assert hb["critical_low"] == 7.0
+
+
+@pytest.mark.asyncio
+async def test_seeded_cbc_raises_alert_end_to_end(client):
+    """A panic Hb value against the SEEDED CBC ranges creates an alert."""
+    tech_user, tech_pw = await make_user("technician")
+    await login(client, tech_user["email"], tech_pw)
+    from app.services.seed_data import ensure_test_reference_ranges
+    await ensure_test_reference_ranges()
+    cbc = await server.db.tests.find_one({"code": "CBC"})
+
+    patient = await make_patient_via_api(client, name="Seed Alert Patient")
+    order = await make_order_for_test(client, patient["id"], cbc)
+    r = await client.post("/api/results", json={
+        "order_id": order["id"],
+        "test_id": cbc["id"],
+        "values": {"Hemoglobin (Hb)": 22.5},
+    })
+    assert r.status_code == 200, r.text
+    alerts = await server.db.critical_alerts.find({"order_id": order["id"]}).to_list(10)
+    assert len(alerts) == 1
+    assert alerts[0]["parameter"] == "Hemoglobin (Hb)"
+    assert alerts[0]["direction"] == "critical_high"

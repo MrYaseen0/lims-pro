@@ -9,7 +9,15 @@ from app.core.database import db, init_db, ensure_indexes, reset_db, audit_logge
 from app.core.security import hash_password
 from app.core.deps import _login_attempts
 from app.core.config import JWT_SECRET, COOKIE_NAME
-from app.services.ranges import parse_range_bounds, compute_result_flags, to_float, check_critical_values
+from app.services.ranges import (
+    parse_range_bounds,
+    compute_result_flags,
+    to_float,
+    check_critical_values,
+    check_delta,
+    match_range_entry,
+)
+from app.services.qc import evaluate_westgard
 
 
 def __getattr__(name):
@@ -34,5 +42,9 @@ __all__ = [
     "COOKIE_NAME",
     "parse_range_bounds",
     "compute_result_flags",
+    "check_critical_values",
+    "check_delta",
+    "match_range_entry",
+    "evaluate_westgard",
     "to_float",
 ]

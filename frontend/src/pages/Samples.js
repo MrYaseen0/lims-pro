@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { sampleAPI, orderAPI } from '../lib/api';
 import { formatDateTime, getStatusColor, formatStatus } from '../lib/utils';
 import {
@@ -8,6 +9,7 @@ import {
   Filter,
   CheckCircle,
   XCircle,
+  Printer,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -38,11 +40,7 @@ export default function Samples() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
 
-  useEffect(() => {
-    fetchSamples();
-  }, [statusFilter]);
-
-  const fetchSamples = async () => {
+  const fetchSamples = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -54,7 +52,11 @@ export default function Samples() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
+
+  useEffect(() => {
+    fetchSamples();
+  }, [fetchSamples]);
 
   const updateSampleStatus = async (sampleId, newStatus) => {
     setUpdatingId(sampleId);
@@ -163,6 +165,16 @@ export default function Samples() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <Link to={`/samples/${sample.id}/label`}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            data-testid={`print-label-${sample.id}`}
+                          >
+                            <Printer className="w-3 h-3 mr-1" />
+                            Print label
+                          </Button>
+                        </Link>
                         {sample.status === 'collected' && (
                           <Button
                             size="sm"

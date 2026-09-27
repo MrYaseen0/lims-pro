@@ -1,7 +1,9 @@
 """Auth, users, and seed routes."""
+import hashlib
+import secrets
 import uuid
-from datetime import datetime, timezone
-from typing import List
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
@@ -10,18 +12,60 @@ from audit_logger import AuditAction
 from app.core.database import db, audit_logger
 from app.core.deps import get_current_user, require_role, check_login_rate_limit, security
 from app.core.security import hash_password, verify_password, create_token
-from app.core.config import COOKIE_NAME, COOKIE_SECURE, JWT_EXPIRATION_HOURS
+from app.core.config import (
+    COOKIE_NAME,
+    COOKIE_SECURE,
+    JWT_EXPIRATION_HOURS,
+    REFRESH_COOKIE_NAME,
+    REFRESH_TOKEN_EXPIRY_DAYS,
+)
 from app.core.pagination import paginate
 from app.models.schemas import UserCreate, UserLogin, TokenResponse, UserRole
 from app.services.seed_data import (
     ensure_doctors_seeded,
     ensure_test_reference_ranges,
+    ensure_default_branch,
     SEED_TESTS,
     REFERENCE_RANGES,
 )
 
 
 router = APIRouter()
+
+
+# --- Refresh-token rotation (opaque tokens) ---
+
+def _hash_refresh_token(raw: str) -> str:
+    """SHA-256 hex digest — the only form of the token ever stored."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def _issue_refresh_token(user_id: str, rotated_from: Optional[str] = None) -> str:
+    """Persist a refresh-token doc and return the RAW token (shown once)."""
+    raw = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    await db.refresh_tokens.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "token_hash": _hash_refresh_token(raw),
+        "expires_at": (now + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)).isoformat(),
+        "revoked": False,
+        "created_at": now.isoformat(),
+        "rotated_from": rotated_from,
+    })
+    return raw
+
+
+def _set_refresh_cookie(response: Response, raw: str):
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=raw,
+        max_age=REFRESH_TOKEN_EXPIRY_DAYS * 24 * 3600,
+        httponly=True,
+        samesite="lax",
+        secure=COOKIE_SECURE,
+        path="/api/auth",
+    )
 
 
 @router.post("/auth/register", response_model=dict)
@@ -96,6 +140,10 @@ async def login(credentials: UserLogin, request: Request, response: Response):
         path="/",
     )
 
+    # Opaque refresh token for rotation; only its SHA-256 digest is stored.
+    refresh_raw = await _issue_refresh_token(user["id"])
+    _set_refresh_cookie(response, refresh_raw)
+
     # Audit log: Successful login
     await audit_logger.log(
         action=AuditAction.LOGIN,
@@ -109,9 +157,39 @@ async def login(credentials: UserLogin, request: Request, response: Response):
     
     return TokenResponse(access_token=token, user=user_response)
 
+@router.post("/auth/refresh", response_model=dict)
+async def refresh_tokens(request: Request, response: Response):
+    """Rotate the refresh token: the presented token is revoked and a new
+    one is issued. Presenting an already-revoked token is treated as reuse
+    (possible theft) and revokes ALL of the user's refresh tokens."""
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    doc = await db.refresh_tokens.find_one({"token_hash": _hash_refresh_token(raw)})
+    now = datetime.now(timezone.utc)
+    if not doc or datetime.fromisoformat(doc["expires_at"]) < now:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    if doc.get("revoked"):
+        # Reuse detected — kill the whole chain for this user.
+        await db.refresh_tokens.update_many(
+            {"user_id": doc["user_id"]}, {"$set": {"revoked": True}}
+        )
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected")
+    await db.refresh_tokens.update_one({"id": doc["id"]}, {"$set": {"revoked": True}})
+    new_raw = await _issue_refresh_token(doc["user_id"], rotated_from=doc["id"])
+    _set_refresh_cookie(response, new_raw)
+    return {"message": "Token refreshed"}
+
 @router.post("/auth/logout", response_model=dict)
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if raw:
+        await db.refresh_tokens.update_one(
+            {"token_hash": _hash_refresh_token(raw)},
+            {"$set": {"revoked": True}},
+        )
     response.delete_cookie(key=COOKIE_NAME, path="/")
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/api/auth")
     return {"message": "Logged out successfully"}
 
 @router.get("/auth/me", response_model=dict)
@@ -168,6 +246,7 @@ async def seed_data(request: Request, credentials: HTTPAuthorizationCredentials 
     # that were seeded before doctors / reference ranges existed.
     await ensure_doctors_seeded()
     await ensure_test_reference_ranges()
+    await ensure_default_branch()
 
     # Check if already seeded
     admin = await db.users.find_one({"email": "admin@lims.pro"})

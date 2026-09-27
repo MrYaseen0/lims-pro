@@ -2,10 +2,10 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.database import db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_branch_scope
 from app.core.pagination import paginate
 from app.models.schemas import (
     Order,
@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.post("/orders", response_model=dict)
-async def create_order(order: OrderCreate, current_user: dict = Depends(get_current_user)):
+async def create_order(order: OrderCreate, request: Request, current_user: dict = Depends(get_current_user)):
     # Get patient info
     patient = await db.patients.find_one({"id": order.patient_id}, {"_id": 0})
     if not patient:
@@ -45,6 +45,7 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
     doc = order_obj.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     doc["tests"] = [t.model_dump() if hasattr(t, 'model_dump') else t for t in doc["tests"]]
+    doc["branch_id"] = await get_branch_scope(request, current_user)
     await db.orders.insert_one(doc)
     
     # Create invoice
@@ -65,6 +66,7 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
 @router.get("/orders", response_model=List[dict])
 async def get_orders(
     response: Response,
+    request: Request,
     status: Optional[str] = None, 
     patient_id: Optional[str] = None,
     priority: Optional[str] = None,
@@ -73,6 +75,9 @@ async def get_orders(
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
+    branch_id = await get_branch_scope(request, current_user)
+    if branch_id:
+        query["branch_id"] = branch_id
     if status:
         query["status"] = status
     if patient_id:

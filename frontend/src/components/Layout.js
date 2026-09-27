@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { inventoryAPI, branchAPI } from '../lib/api';
 import {
   LayoutDashboard,
   Users,
@@ -17,6 +18,9 @@ import {
   Menu,
   X,
   ChevronDown,
+  Package,
+  Activity,
+  Building2,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -27,6 +31,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { getInitials } from '../lib/utils';
 
 const navItems = [
@@ -38,6 +49,8 @@ const navItems = [
   { path: '/technician', label: 'Lab Queue', icon: FlaskConical, roles: ['admin', 'lab_manager', 'technician'] },
   { path: '/pathologist', label: 'Review Queue', icon: FileCheck, roles: ['admin', 'lab_manager', 'pathologist'] },
   { path: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'lab_manager', 'pathologist'] },
+  { path: '/inventory', label: 'Inventory', icon: Package, roles: ['admin', 'lab_manager'] },
+  { path: '/qc', label: 'Quality Control', icon: Activity, roles: ['admin', 'lab_manager', 'technician', 'pathologist', 'receptionist', 'collection_staff', 'doctor'] },
   { path: '/billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'lab_manager', 'receptionist'] },
   { path: '/analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'lab_manager'] },
   { path: '/settings', label: 'Settings', icon: Settings, roles: ['admin'] },
@@ -46,13 +59,72 @@ const navItems = [
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [alertCount, setAlertCount] = useState(0);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState(() => localStorage.getItem('branch_id') || '');
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    localStorage.removeItem('branch_id');
     logout();
     navigate('/login');
+  };
+
+  // Inventory alert badge — admin/lab_manager only
+  useEffect(() => {
+    if (!['admin', 'lab_manager'].includes(user?.role)) {
+      setAlertCount(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await inventoryAPI.getAlerts();
+        if (!cancelled) {
+          const count =
+            (res.data.expired?.length || 0) +
+            (res.data.expiring_soon?.length || 0) +
+            (res.data.low_stock?.length || 0);
+          setAlertCount(count);
+        }
+      } catch {
+        // badge is nice-to-have
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
+  // Branch list for the admin branch selector
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await branchAPI.getAll();
+        if (!cancelled) setBranches(res.data || []);
+      } catch {
+        // selector stays hidden without branches
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
+  const handleBranchChange = (value) => {
+    const v = value === 'all' ? '' : value;
+    setSelectedBranch(v);
+    if (v) {
+      localStorage.setItem('branch_id', v);
+    } else {
+      localStorage.removeItem('branch_id');
+    }
+    // Branch scoping affects list endpoints — reload to re-query with the header
+    window.location.reload();
   };
 
   const filteredNavItems = navItems.filter(item => 
@@ -95,6 +167,7 @@ export default function Layout({ children }) {
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+            const showBadge = item.path === '/inventory' && alertCount > 0;
             return (
               <Link
                 key={item.path}
@@ -107,8 +180,16 @@ export default function Layout({ children }) {
                 }`}
                 data-testid={`nav-${item.path.slice(1)}`}
               >
-                <item.icon className="w-5 h-5" />
-                {item.label}
+                <item.icon className="w-5 h-5 shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                {showBadge && (
+                  <span
+                    className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-xs font-semibold flex items-center justify-center"
+                    data-testid="nav-inventory-badge"
+                  >
+                    {alertCount > 99 ? '99+' : alertCount}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -144,6 +225,26 @@ export default function Layout({ children }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Admin branch selector — pins X-Branch-Id for list endpoints */}
+            {user?.role === 'admin' && branches.length > 0 && (
+              <Select value={selectedBranch || 'all'} onValueChange={handleBranchChange}>
+                <SelectTrigger
+                  className="w-[170px] h-9 text-sm"
+                  data-testid="branch-selector"
+                >
+                  <Building2 className="w-4 h-4 mr-2 text-slate-400 shrink-0" />
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All branches</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}{b.code ? ` (${b.code})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2" data-testid="user-menu-trigger">

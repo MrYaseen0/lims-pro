@@ -307,8 +307,8 @@ http {
 # Format
 mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database>?retryWrites=true&w=majority
 
-# Example
-MONGO_URL=mongodb+srv://lims_prod:SecurePassword123@cluster0.abc123.mongodb.net/lims_production?retryWrites=true&w=majority
+# Example (use your real values; never commit them)
+MONGO_URL=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/lims_production?retryWrites=true&w=majority
 ```
 
 ### Indexes (Run once)

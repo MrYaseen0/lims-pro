@@ -30,6 +30,12 @@ JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "24"))
 COOKIE_NAME = "lims_token"
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 
+# Refresh-token rotation: opaque tokens, only the SHA-256 hex digest is
+# stored server-side. Cookie is scoped to /api/auth so it is only sent to
+# the auth endpoints.
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_TOKEN_EXPIRY_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRY_DAYS", "30"))
+
 # Reports directory
 REPORTS_DIR = ROOT_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
